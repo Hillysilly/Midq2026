@@ -1,7 +1,7 @@
 """Union-Find decoder (Delfosse & Nickerson, arXiv:1709.06218) in pure Python.
 
-The decoder runs on the same detector graph PyMatching uses, built from a Stim
-detector error model, so the two can be compared on equal terms.
+The decoder runs on our own detector graph (`qec/dem_graph.py`), which has exactly the same
+edges and weights as PyMatching's, so the two can be compared on equal terms.
 
 * `weighted=False` (default): the original algorithm. Every edge needs two half-edge growth
   steps no matter its probability. Fast and simple, but less accurate than MWPM (review §5.2).
@@ -22,58 +22,219 @@ The algorithm has two steps:
 from __future__ import annotations
 
 import numpy as np
-import pymatching
 import sinter
 import stim
 
+from .dem_graph import DemGraph, obs_mask_to_bits
+
+try:
+    import numba as _nb
+except ImportError:  # pragma: no cover
+    _nb = None
+
+
+def _uf_kernel_py(dets, caps, eu, ev, eobs, adj_ptr, adj_edge, adj_nbr, B):
+    """Union-Find over a batch of shots, written in the *synchronous, edge-parallel* form.
+
+    Each growth round, every edge looks at the clusters at its two ends (as they were at the start
+    of the round) and grows by one step per active neighbouring cluster. All edges can do this at
+    the same time, which is how a hardware (FPGA/ASIC) Union-Find works. Then the fully grown
+    edges merge their clusters. Rounds repeat until no cluster is odd and boundary-free. Peeling
+    is a BFS forest over the grown edges, stripped from the leaves inwards.
+
+    Returns (observable bitmask per shot, growth rounds per shot).
+    """
+    S = dets.shape[0]
+    N = B + 1
+    M = eu.size
+    out = np.zeros(S, dtype=np.int64)
+    rounds_out = np.zeros(S, dtype=np.int64)
+    for s in _prange(S):
+        cap = caps[s]
+        parent = np.arange(N)
+        size = np.ones(N, dtype=np.int64)
+        parity = np.zeros(N, dtype=np.bool_)
+        has_b = np.zeros(N, dtype=np.bool_)
+        reached = np.zeros(N, dtype=np.bool_)
+        has_b[B] = True
+        n_def = 0
+        for x in range(B):
+            if dets[s, x]:
+                parity[x] = True
+                reached[x] = True
+                n_def += 1
+        if n_def == 0:
+            continue
+        support = np.zeros(M, dtype=np.int64)
+        root = np.empty(N, dtype=np.int64)
+        newly = np.empty(M, dtype=np.int64)
+        rounds = 0
+        while True:
+            # roots and activity, frozen for this round
+            for x in range(N):
+                r = x
+                while parent[r] != r:
+                    r = parent[r]
+                root[x] = r
+            any_active = False
+            for x in range(N):
+                if reached[x] and root[x] == x and parity[x] and not has_b[x]:
+                    any_active = True
+                    break
+            if not any_active:
+                break
+            rounds += 1
+            n_new = 0
+            progressed = False
+            for e in range(M):  # every edge independently
+                if support[e] >= cap[e]:
+                    continue
+                u = eu[e]
+                v = ev[e]
+                inc = 0
+                ru = -1
+                if reached[u]:
+                    ru = root[u]
+                    if parity[ru] and not has_b[ru]:
+                        inc += 1
+                if reached[v]:
+                    rv = root[v]
+                    if rv != ru and parity[rv] and not has_b[rv]:
+                        inc += 1
+                if inc > 0:
+                    progressed = True
+                    support[e] = min(cap[e], support[e] + inc)
+                    if support[e] == cap[e]:
+                        newly[n_new] = e
+                        n_new += 1
+            if not progressed:
+                break
+            for i in range(n_new):  # merge clusters joined by fully grown edges
+                e = newly[i]
+                u = eu[e]
+                v = ev[e]
+                reached[u] = True
+                reached[v] = True
+                ru = u
+                while parent[ru] != ru:
+                    ru = parent[ru]
+                rv = v
+                while parent[rv] != rv:
+                    rv = parent[rv]
+                if ru == rv:
+                    continue
+                if size[ru] < size[rv]:
+                    tmp = ru
+                    ru = rv
+                    rv = tmp
+                parent[rv] = ru
+                size[ru] += size[rv]
+                parity[ru] ^= parity[rv]
+                has_b[ru] |= has_b[rv]
+        rounds_out[s] = rounds
+
+        # peel: BFS forest over grown edges (boundary component first), then leaves inwards
+        visited = np.zeros(N, dtype=np.bool_)
+        tree_e = np.full(N, -1, dtype=np.int64)
+        tree_p = np.full(N, -1, dtype=np.int64)
+        order = np.empty(N, dtype=np.int64)
+        n_ord = 0
+        for start_i in range(N + 1):
+            start = B if start_i == 0 else start_i - 1
+            if not reached[start] or visited[start]:
+                continue
+            visited[start] = True
+            order[n_ord] = start
+            head = n_ord
+            n_ord += 1
+            while head < n_ord:
+                x = order[head]
+                head += 1
+                for k in range(adj_ptr[x], adj_ptr[x + 1]):
+                    e = adj_edge[k]
+                    y = adj_nbr[k]
+                    if support[e] >= cap[e] and not visited[y]:
+                        visited[y] = True
+                        tree_e[y] = e
+                        tree_p[y] = x
+                        order[n_ord] = y
+                        n_ord += 1
+        defect = np.zeros(N, dtype=np.bool_)
+        for x in range(B):
+            defect[x] = dets[s, x]
+        pred = 0
+        for i in range(n_ord - 1, -1, -1):
+            x = order[i]
+            if tree_e[x] >= 0 and defect[x]:
+                pred ^= eobs[tree_e[x]]
+                defect[x] = False
+                defect[tree_p[x]] ^= True
+        out[s] = pred
+    return out, rounds_out
+
+
+if _nb is not None:
+    _prange = _nb.prange
+    _uf_kernel = _nb.njit(parallel=True, cache=True)(_uf_kernel_py)
+else:  # pragma: no cover
+    _prange = range
+    _uf_kernel = _uf_kernel_py
+
+
 
 class UnionFindDecoder:
-    def __init__(self, dem: stim.DetectorErrorModel, weighted: bool = False, resolution: float = 4.0):
+    def __init__(self, dem: stim.DetectorErrorModel | DemGraph, weighted: bool = False,
+                 resolution: float = 4.0):
         """
         Args:
-            dem: detector error model (from `qec.detector_error_model`).
+            dem: detector error model (from `qec.detector_error_model`), or a prebuilt `DemGraph`.
             weighted: grow edges at a speed set by their weight (see module docstring).
             resolution: growth steps for the lightest edge when weighted. Too coarse (2) makes
                 ties between "pair up" and "both go to the boundary" that peeling breaks badly,
                 and some single faults then fail at d=3. 4 fixes this, and higher is only slower.
         """
-        matching = pymatching.Matching.from_detector_error_model(dem)
-        self.num_detectors = dem.num_detectors
-        self.num_observables = dem.num_observables
-        self.boundary = self.num_detectors  # single virtual boundary node
-
-        self.edge_u: list[int] = []
-        self.edge_v: list[int] = []
-        self.edge_obs: list[int] = []  # bitmask of observables each edge flips
-        weights: list[float] = []
-        for u, v, attrs in matching.edges():
-            mask = 0
-            for f in attrs.get("fault_ids", ()):
-                mask ^= 1 << f
-            self.edge_u.append(u)
-            self.edge_v.append(self.boundary if v is None else v)
-            self.edge_obs.append(mask)
-            weights.append(attrs.get("weight", 1.0))
-
+        g = dem if isinstance(dem, DemGraph) else DemGraph.from_dem(dem)
+        self.graph = g
+        self.num_detectors = g.num_detectors
+        self.num_observables = g.num_observables
+        self.boundary = g.boundary  # single virtual boundary node
+        self.resolution = resolution
+        self.edge_u: list[int] = g.edge_u.tolist()
+        self.edge_v: list[int] = g.edge_v.tolist()
+        self.edge_obs: list[int] = g.edge_obs.tolist()  # bitmask of observables each edge flips
+        self.adj = g.adj
+        weights = g.edge_weights
+        self.w_ref = float(weights[weights > 0].min()) if (weights > 0).any() else 1.0
         # Growth steps needed to fully grow each edge.
-        if weighted and weights:
-            positive = [w for w in weights if w > 0]
-            w_min = min(positive) if positive else 1.0
-            self.edge_cap = [max(1, round(resolution * max(w, w_min) / w_min)) for w in weights]
-        else:
-            self.edge_cap = [2] * len(weights)
+        self.edge_cap = self.caps_from_weights(weights) if weighted else [2] * len(weights)
+        self.last_growth_rounds = 0  # parallel depth of the last decode (see qec/metrics.py)
+        self.backend = "numba" if _nb is not None else "python"
+        # flat arrays for the compiled kernel
+        nbrs = [(e, y) for x in range(g.num_nodes) for e, y in self.adj[x]]
+        self._adj_ptr = np.concatenate([[0], np.cumsum([len(a) for a in self.adj])]).astype(np.int64)
+        self._adj_edge = np.array([e for e, _ in nbrs], dtype=np.int64)
+        self._adj_nbr = np.array([y for _, y in nbrs], dtype=np.int64)
+        self._eu = g.edge_u.astype(np.int64)
+        self._ev = g.edge_v.astype(np.int64)
+        self._eobs = g.edge_obs.astype(np.int64)
+        self.last_batch_rounds = np.zeros(0, dtype=np.int64)
 
-        self.adj: list[list[tuple[int, int]]] = [[] for _ in range(self.num_detectors + 1)]
-        for e, (u, v) in enumerate(zip(self.edge_u, self.edge_v)):
-            self.adj[u].append((e, v))
-            self.adj[v].append((e, u))
+    def caps_from_weights(self, weights: np.ndarray) -> list[int]:
+        """Edge weight -> number of growth steps. The lightest static edge takes `resolution` steps."""
+        w = np.maximum(np.asarray(weights, dtype=float), 0.0)
+        return np.maximum(1, np.rint(self.resolution * w / self.w_ref)).astype(int).tolist()
 
-    def decode(self, detection_events: np.ndarray) -> int:
-        """Return a bitmask of predicted logical-observable flips for one shot."""
+    def decode(self, detection_events: np.ndarray, edge_cap: list[int] | None = None) -> int:
+        """Return a bitmask of predicted logical-observable flips for one shot.
+
+        `edge_cap` overrides the growth steps per edge for this shot only (BP+UF uses it to feed
+        in per-shot weights from belief propagation)."""
         defects = np.flatnonzero(detection_events).tolist()
+        self.last_growth_rounds = 0
         if not defects:
             return 0
-        B, adj, eu, ev, cap = self.boundary, self.adj, self.edge_u, self.edge_v, self.edge_cap
+        B, adj, eu, ev = self.boundary, self.adj, self.edge_u, self.edge_v
+        cap = self.edge_cap if edge_cap is None else edge_cap
 
         # Disjoint-set forest over vertices that clusters have reached.
         parent: dict[int, int] = {}
@@ -113,6 +274,7 @@ class UnionFindDecoder:
         support: dict[int, int] = {}  # edge -> growth so far; full when it reaches cap[e]
         active = set(defects)
         while active:
+            self.last_growth_rounds += 1
             grown: list[int] = []
             progressed = False
             for r in active:
@@ -169,14 +331,27 @@ class UnionFindDecoder:
                     defect_set ^= {px}
         return prediction
 
-    def decode_batch(self, detection_events: np.ndarray) -> np.ndarray:
-        """Decode a (shots, num_detectors) bool array -> (shots, num_observables) bool array."""
-        out = np.zeros((detection_events.shape[0], self.num_observables), dtype=bool)
-        for i, row in enumerate(detection_events):
-            mask = self.decode(row)
-            for k in range(self.num_observables):
-                out[i, k] = (mask >> k) & 1
-        return out
+    def decode_batch(self, detection_events: np.ndarray, edge_caps: np.ndarray | None = None) -> np.ndarray:
+        """Decode a (shots, num_detectors) bool array -> (shots, num_observables) bool array.
+
+        Uses the compiled edge-parallel kernel when numba is installed (same answers as `decode`,
+        checked in tests/test_decoders.py). `edge_caps` may be (num_edges,) or (shots, num_edges).
+        Growth rounds per shot are left in `self.last_batch_rounds`.
+        """
+        dets = np.ascontiguousarray(np.atleast_2d(detection_events), dtype=np.bool_)
+        caps = np.atleast_2d(np.asarray(self.edge_cap if edge_caps is None else edge_caps, dtype=np.int64))
+        if self.backend == "python":
+            masks, rounds = [], []
+            for i, row in enumerate(dets):
+                masks.append(self.decode(row, edge_cap=caps[min(i, len(caps) - 1)].tolist()))
+                rounds.append(self.last_growth_rounds)
+            self.last_batch_rounds = np.array(rounds, dtype=np.int64)
+            return obs_mask_to_bits(np.array(masks, dtype=np.int64), self.num_observables)
+        caps = np.ascontiguousarray(np.broadcast_to(caps, (len(dets), caps.shape[1])))
+        masks, rounds = _uf_kernel(dets, caps, self._eu, self._ev, self._eobs,
+                                   self._adj_ptr, self._adj_edge, self._adj_nbr, self.boundary)
+        self.last_batch_rounds = rounds
+        return obs_mask_to_bits(masks, self.num_observables)
 
 
 class _CompiledUnionFind(sinter.CompiledDecoder):

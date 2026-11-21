@@ -3,16 +3,30 @@
 1. `make_decoder(name, dem)` returns an object with
    `decode_batch(dets: bool[shots, num_detectors]) -> bool[shots, num_observables]`.
    Use it in your own scripts and notebooks.
-2. `SINTER_DECODERS` maps the same names to Sinter decoders, for parallel threshold sweeps.
+2. `sinter_decoders()` maps the same names to Sinter decoders, for parallel threshold sweeps.
 
-| name                 | algorithm (review section)                         | speed     |
-|----------------------|----------------------------------------------------|-----------|
-| pymatching           | Minimum-weight perfect matching, Sparse Blossom §5.1 | fast (C++) |
-| pymatching_correlated| Two-pass MWPM that uses the X/Z correlation of Y errors (§6) | fast (C++) |
-| union_find           | Union-Find, unweighted §5.2                         | slow (Python) |
-| union_find_weighted  | Union-Find, weighted growth                         | slow (Python) |
-| bposd                | Belief propagation + ordered statistics §5.3        | slow      |
-| belief_matching      | BP to re-weight the graph, then MWPM (§5.3, §6)     | slow      |
+**Written by us, from scratch** (no decoding library inside; see `OURS`):
+
+| name                 | algorithm (review section)                                   | file |
+|----------------------|--------------------------------------------------------------|------|
+| union_find           | Union-Find, unweighted §5.2 (numba, edge-parallel growth)    | union_find.py |
+| union_find_weighted  | Union-Find with weighted growth                              | union_find.py |
+| mwpm                 | MWPM: Dijkstra + boundary copies + blossom (networkx) §5.1   | matching.py |
+| greedy_matching      | Greedy matching by savings                                   | matching.py |
+| greedy_matching_2opt | Greedy matching + 2-opt local search                         | matching.py |
+| lookup               | Lookup table, most-likely error up to weight 2 (small codes) | lookup.py |
+| bp                   | Min-sum belief propagation §5.3 (numba)                      | bp.py |
+| bp_osd               | BP + our own OSD-0 over GF(2) §5.3                            | bp.py |
+| bp_uf                | BP posteriors as per-shot weights for Union-Find ("belief-find") | bp.py |
+
+**Library baselines** (to compare against):
+
+| name                 | algorithm                                                   |
+|----------------------|-------------------------------------------------------------|
+| pymatching           | PyMatching Sparse Blossom MWPM (C++)                        |
+| pymatching_correlated| PyMatching two-pass correlated MWPM (§6)                    |
+| bposd                | stimbposd / ldpc BP+OSD                                     |
+| belief_matching      | beliefmatching (BP re-weighting + PyMatching)               |
 """
 from __future__ import annotations
 
@@ -23,6 +37,9 @@ import pymatching
 import sinter
 import stim
 
+from .bp import BPDecoder, BPOSDDecoder, BPUnionFindDecoder
+from .lookup import LookupTableDecoder
+from .matching import GreedyMatchingDecoder, MWPMDecoder
 from .union_find import UnionFindDecoder, UnionFindSinterDecoder
 
 
@@ -78,11 +95,42 @@ _FACTORIES: dict[str, Callable[[stim.DetectorErrorModel], object]] = {
     "pymatching_correlated": lambda dem: _Matching(dem, correlated=True),
     "union_find": lambda dem: UnionFindDecoder(dem),
     "union_find_weighted": lambda dem: UnionFindDecoder(dem, weighted=True),
+    "mwpm": MWPMDecoder,
+    "greedy_matching": GreedyMatchingDecoder,
+    "greedy_matching_2opt": lambda dem: GreedyMatchingDecoder(dem, local_search=True),
+    "lookup": LookupTableDecoder,
+    "bp": BPDecoder,
+    "bp_osd": BPOSDDecoder,
+    "bp_uf": BPUnionFindDecoder,
     "bposd": _bposd,
     "belief_matching": _belief_matching,
 }
 
 DECODER_NAMES = list(_FACTORIES)
+OURS = ["union_find", "union_find_weighted", "mwpm", "greedy_matching", "greedy_matching_2opt",
+        "lookup", "bp", "bp_osd", "bp_uf"]
+BASELINES = ["pymatching", "pymatching_correlated", "bposd", "belief_matching"]
+
+
+class _CompiledGeneric(sinter.CompiledDecoder):
+    def __init__(self, dec, num_detectors: int):
+        self.dec = dec
+        self.num_detectors = num_detectors
+
+    def decode_shots_bit_packed(self, *, bit_packed_detection_event_data: np.ndarray) -> np.ndarray:
+        dets = np.unpackbits(bit_packed_detection_event_data, axis=1, bitorder="little",
+                             count=self.num_detectors).astype(bool)
+        return np.packbits(self.dec.decode_batch(dets), axis=1, bitorder="little")
+
+
+class RegistrySinterDecoder(sinter.Decoder):
+    """Any `make_decoder` name as a Sinter decoder."""
+
+    def __init__(self, name: str):
+        self.name = name
+
+    def compile_decoder_for_dem(self, *, dem: stim.DetectorErrorModel) -> sinter.CompiledDecoder:
+        return _CompiledGeneric(make_decoder(self.name, dem), dem.num_detectors)
 
 
 def make_decoder(name: str, dem: stim.DetectorErrorModel):
@@ -95,9 +143,9 @@ def sinter_decoders() -> dict:
     """Custom decoders for `sinter.collect(custom_decoders=...)`; 'pymatching' is built into Sinter."""
     out: dict = {
         "pymatching_correlated": CorrelatedMatchingSinterDecoder(),
-        "union_find": UnionFindSinterDecoder(),
-        "union_find_weighted": UnionFindSinterDecoder(weighted=True),
     }
+    for name in OURS:
+        out[name] = RegistrySinterDecoder(name)
     try:
         import stimbposd
         out["bposd"] = stimbposd.SinterDecoder_BPOSD(max_bp_iters=20, osd_order=0)

@@ -1,4 +1,49 @@
-# midq2026 — surface-code QEC toolkit
+# midq2026: surface-code decoders, built from scratch
+
+Our entry for the **Northrop Grumman decoder-implementation challenge**. We implemented **eight
+decoding algorithms ourselves** (no decoding library inside), test functions that compute decoder
+metrics, and a benchmark harness that compares them against the standard libraries on
+[Stim](https://github.com/quantumlib/Stim)-generated syndromes. We follow the decoder review
+[arXiv:2307.14989](https://arxiv.org/abs/2307.14989).
+
+| our decoder | file | one line |
+|---|---|---|
+| Union-Find (plain, weighted) | `qec/union_find.py` | grow clusters, merge, peel; compiled edge-parallel kernel |
+| MWPM | `qec/matching.py` | Dijkstra + boundary copies + blossom; matches PyMatching on 100% of shots |
+| Greedy matching (+2-opt) | `qec/matching.py` | fast pairing by savings; shows why exact matching matters |
+| Lookup table | `qec/lookup.py` | most-likely correction per syndrome, up to 2 faults (d = 3) |
+| Belief propagation | `qec/bp.py` | min-sum on the Tanner graph; numba and whole-array numpy versions |
+| BP+OSD | `qec/bp.py` | BP, then our own GF(2) ordered-statistics decoding with combination sweep |
+| **BP+UF** | `qec/bp.py` | BP's beliefs become per-shot Union-Find weights: our most accurate, and parallel |
+
+**Start here:** [`docs/DECODERS.md`](docs/DECODERS.md) (how each works, cost, parallelism),
+[`RESULTS.md`](RESULTS.md) §7 (measured numbers) and
+[`notebooks/02_decoders_from_scratch.ipynb`](notebooks/02_decoders_from_scratch.ipynb) (watch each decoder work).
+
+**Headline results** (circuit-level noise, same Stim circuits for every decoder):
+* **BP+UF**, our pairing of belief propagation with Union-Find, ties PyMatching's best (correlated) mode at
+  d = 7 and makes 1.8× fewer logical errors than standard MWPM. Both stages are parallel.
+* **Union-Find** runs at ~1 µs per round on one CPU thread (PyMatching: 0.34 µs), with 2–6 parallel growth
+  rounds from d = 3 to 9, and never loses code distance.
+* Our **BP+OSD** beats the ldpc library's BP+OSD (6.1e-4 vs 1.0e-3 per round at d = 5, 2× faster).
+* Our **MWPM** makes identical predictions to PyMatching on every shot tested.
+* **Distance-preserving ≠ most accurate:** the BP hybrids miss 0.1–0.3% of two-fault errors at d = 5;
+  greedy matching misses 2%, so bigger codes don't help it.
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\python -m pip install -r requirements.txt
+.\.venv\Scripts\python -m pytest -q              # ~90 tests incl. decoder metrics, ~1 min
+.\.venv\Scripts\python metrics_report.py         # metrics table + plots in out/metrics/
+```
+
+`pytest` doesn't just pass/fail. `tests/test_metrics.py` *computes* logical error rates, Λ,
+thresholds, fault-weight correction, latency and parallel depth for every decoder, prints them as
+a table at the end of the run, and saves them to `out/metrics/test_metrics.json`.
+
+---
+
+## The rest of the toolkit
 
 Simulate noisy surface codes, decode them several ways, and measure thresholds. All of it is
 built on [Stim](https://github.com/quantumlib/Stim), [PyMatching](https://github.com/oscarhiggott/PyMatching)
@@ -6,6 +51,8 @@ and [Sinter](https://pypi.org/project/sinter/), following the decoder review [ar
 
 **Reading order for new teammates**
 
+0. [`docs/DECODERS.md`](docs/DECODERS.md): our decoders, for the talk, then
+   [`notebooks/02_decoders_from_scratch.ipynb`](notebooks/02_decoders_from_scratch.ipynb) to watch them work.
 1. [`docs/explainer.html`](docs/explainer.html): open it in a browser. An interactive primer: click errors
    onto a surface code, decode them, and see our results. No background needed.
 2. [`notebooks/01_first_surface_code.ipynb`](notebooks/01_first_surface_code.ipynb): build, simulate and decode
@@ -19,7 +66,7 @@ and [Sinter](https://pypi.org/project/sinter/), following the decoder review [ar
 ```powershell
 py -m venv .venv
 .\.venv\Scripts\python -m pip install -r requirements.txt
-.\.venv\Scripts\python -m pytest -q          # 24 tests, ~10 s
+.\.venv\Scripts\python -m pytest -q          # ~90 tests, ~1 min
 ```
 
 ## What's here
@@ -29,8 +76,13 @@ py -m venv .venv
 | `qec/surface_code.py` | Our own rotated surface code: **CSS or XZZX**, square or **rectangular** (dx ≠ dz), hook-safe CNOT order. Builds circuit-level memory experiments and ideal-measurement (code-capacity / phenomenological) ones. |
 | `qec/noise.py` | `NoiseModel`: code capacity, phenomenological, circuit level, SI1000, plus **biased noise** (η = pZ/(pX+pY)). |
 | `qec/circuits.py` | Stim's built-in generated circuits, and `detector_error_model()`, the one helper every decoder uses. |
-| `qec/decoders.py` | One registry: `make_decoder(name, dem)` for scripts, `sinter_decoders()` for sweeps. MWPM, Union-Find, weighted Union-Find, BP+OSD, belief-matching. |
-| `qec/union_find.py` | Union-Find decoder written from scratch (unweighted and weighted). |
+| `qec/decoders.py` | One registry: `make_decoder(name, dem)` for scripts, `sinter_decoders()` for sweeps. `OURS` lists our decoders, `BASELINES` the library ones. |
+| `qec/dem_graph.py` | Stim detector error model → check matrices (for BP/OSD/lookup) and decoding graph (for matching/UF). |
+| `qec/bp.py`, `qec/matching.py`, `qec/lookup.py` | Our BP, BP+OSD, BP+UF, MWPM, greedy matching and lookup-table decoders. |
+| `qec/metrics.py` | Decoder metrics: logical error rate, Λ, threshold, fault-weight correction, latency, parallel depth. |
+| `metrics_report.py` | Every metric for every decoder in one table, plus accuracy-vs-speed and parallel-depth plots. |
+| `run_new_decoders.ps1` | Threshold sweeps of our decoders vs the library baselines. |
+| `qec/union_find.py` | Union-Find decoder written from scratch (unweighted and weighted): readable Python version plus a compiled edge-parallel kernel. |
 | `qec/sliding_window.py` | Sliding-window decoder for real-time decoding studies. |
 | `qec/analysis.py` | Error bars, threshold crossings, Λ, scaling fits, distance projections. |
 | `quickstart.py` | One experiment, decoded two ways, with optional SVG circuit diagrams. |
@@ -44,6 +96,8 @@ py -m venv .venv
 | `run_experiments.ps1`, `run_followups.ps1` | Re-run every experiment behind `RESULTS.md`. |
 | `tools/export_explainer_data.py` | Copies results into the interactive explainer. |
 | `notebooks/01_first_surface_code.ipynb` | A step-by-step beginner notebook. |
+| `notebooks/02_decoders_from_scratch.ipynb` | Each of our decoders on real shots, then every metric (regenerate with `tools/make_notebook_decoders.py --check`). |
+| `tools/talk_figures.py` | Slide-sized figures for the talk (`out/talk/`). |
 
 ## Common commands
 
@@ -61,7 +115,7 @@ $py = ".\.venv\Scripts\python"
 
 `bench.py` options: `--noise {code-capacity,phenomenological,circuit,si1000}`, `--bias`,
 `--variants css xzzx`, `--distances`, `--ps`, `--rounds`, `--basis {Z,X,both}`,
-`--decoders pymatching union_find union_find_weighted bposd belief_matching`,
+`--decoders` (any name from `qec.DECODER_NAMES`, e.g. `pymatching bp_uf bp_osd union_find_weighted`),
 `--max-shots`, `--max-errors`, `--workers`. Results go to `out/<name>/`, and an interrupted run
 picks up where it stopped.
 
@@ -84,9 +138,10 @@ print("logical error rate:", (pred != obs).any(axis=1).mean())
 1. Write a class whose constructor takes a `stim.DetectorErrorModel`, with
    `decode_batch(dets: bool[shots, n_det]) -> bool[shots, n_obs]`. Copy the pattern in
    `qec/union_find.py`.
-2. Register it in `_FACTORIES` in `qec/decoders.py`, and wrap it for Sinter the way
-   `UnionFindSinterDecoder` is wrapped.
-3. Add a single-fault test in `tests/test_decoders.py`: every single fault must be corrected.
+2. Register it in `_FACTORIES` in `qec/decoders.py` and add its name to `OURS`; Sinter gets it
+   automatically through `RegistrySinterDecoder`.
+3. Add its name to the parametrised tests in `tests/test_new_decoders.py` (every single fault must be
+   corrected) and `tests/test_metrics.py` (metrics).
 4. `bench.py --decoders pymatching your_decoder` gives a head-to-head plot.
 
 ## Conventions

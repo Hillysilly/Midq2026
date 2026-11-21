@@ -1,0 +1,10 @@
+css bp_osd noise=code-capacity bias=0.5
+  threshold ~0.1537   (d5/d9: 0.16, d9/d13: 0.1475)
+css bp_uf noise=code-capacity bias=0.5
+  threshold ~0.1626   (d5/d9: 0.1626, d9/d13: no crossing)
+css pymatching noise=code-capacity bias=0.5
+  threshold ~0.1458   (d5/d9: 0.139, d9/d13: 0.1525)
+css union_find noise=code-capacity bias=0.5
+  threshold ~0.1238   (d5/d9: 0.1193, d9/d13: 0.1284)
+css union_find_weighted noise=code-capacity bias=0.5
+  threshold ~0.1388   (d5/d9: 0.1327, d9/d13: 0.1448)

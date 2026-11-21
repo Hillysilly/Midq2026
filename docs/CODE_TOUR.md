@@ -92,24 +92,38 @@ circuit.diagram("matchgraph-svg")                     # picture of the decoding 
 circuit.diagram("detslice-with-ops-svg", tick=range(0, 8))
 ```
 
-## 5. Decoders (`qec/decoders.py`, `qec/union_find.py`, `qec/sliding_window.py`)
+## 5. Decoders (`qec/decoders.py` and friends)
 
-Every decoder has the same shape: constructed from a DEM, with `decode_batch(bool[shots, detectors]) ->
-bool[shots, observables]`.
+Every decoder has the same shape: constructed from a DEM (or a prebuilt `DemGraph`), with
+`decode_batch(bool[shots, detectors]) -> bool[shots, observables]`. `docs/DECODERS.md` explains the
+algorithms; this is where the code lives.
 
-* **pymatching / pymatching_correlated**: thin wrappers around PyMatching.
-* **union_find**: builds its graph from PyMatching's `edges()` so it sees the exact same graph.
-  `decode()` runs (1) cluster growth with a disjoint-set forest (`find` / `union`, union by size,
-  path halving), stopping when every cluster has even parity or touches the boundary, then (2) peeling
-  a BFS spanning tree from the leaves inward. Weighted mode gives each edge `cap = round(4·w/w_min)` growth
-  steps. The comments explain why 4 and not 2.
-* **sliding_window**: splits detectors by their time coordinate into windows, builds one small matching
+* **`dem_graph.py`**: `DemGraph.from_dem(dem)` is the shared foundation. It reads `dem.flattened()`,
+  splits each error at `^` separators into graph-like components (edges), merges parallel edges with
+  `xor_prob`, and also builds `H`, `L` and `priors` for the hypergraph view. `col_edges[j]` maps each
+  mechanism to its graph edges (BP+UF uses it).
+* **`union_find.py`**: `decode()` is the readable reference (dicts, cluster member lists).
+  `_uf_kernel_py` is the same algorithm in the synchronous edge-parallel form, compiled with numba
+  (`parallel=True` spreads shots over cores). `decode_batch(dets, edge_caps=...)` takes per-shot growth
+  caps, and `last_batch_rounds` holds the growth rounds (parallel depth).
+* **`bp.py`**: `MinSumBP` with two backends. `"numpy"` updates all messages with `np.ufunc.reduceat`
+  per check, and `"numba"` (`_bp_kernel`) loops. They agree to 1e-14 (tested). `GF2Solver` is the OSD:
+  an XOR basis keyed by leading bit, with each vector carrying the set of columns it combines (a
+  Python int used as a bit set). `BPUnionFindDecoder` maps posteriors to edges with
+  `edge_probs_from_mechanisms`, then to caps.
+* **`matching.py`**: scipy Dijkstra from each defect, a syndrome graph with boundary copies, and networkx
+  `max_weight_matching(maxcardinality=True)` on `BIG − distance`. `_path_obs` walks the predecessor
+  array to XOR observable masks. `GreedyMatchingDecoder(local_search=True)` adds 2-opt.
+* **`lookup.py`**: dict from syndrome (packed to a Python int) to observable mask; misses go to
+  weighted UF.
+* **pymatching / pymatching_correlated / bposd / belief_matching**: thin wrappers around the libraries,
+  used as baselines only.
+* **`sliding_window.py`**: splits detectors by their time coordinate into windows, builds one small matching
   graph per window (future edges become boundary edges, past ones are dropped), commits only
   corrections that start in the commit region, and flips the affected later detectors.
 
-**Sinter adapters:** a `sinter.Decoder` subclass whose `compile_decoder_for_dem(dem)` returns a
-`sinter.CompiledDecoder` with `decode_shots_bit_packed`. See `UnionFindSinterDecoder` and
-`CorrelatedMatchingSinterDecoder`. Unpack with `np.unpackbits(..., bitorder="little")`.
+**Sinter adapters:** `RegistrySinterDecoder(name)` wraps any registry decoder (bit-unpacking with
+`np.unpackbits(..., bitorder="little")`). Every name in `OURS` is registered automatically.
 
 ## 6. Statistics (`qec/analysis.py`)
 
@@ -122,15 +136,22 @@ bool[shots, observables]`.
 
 ## 7. Tests (`tests/`)
 
-The checks that matter most:
+* `test_decoders.py`, `test_surface_code.py`, `test_nn.py`: the original checks. Every single fault is
+  corrected, circuit-level distance equals code distance, and the sliding window with one giant window is
+  bit-identical to global decoding.
+* `test_new_decoders.py`: our graph equals PyMatching's, our MWPM equals PyMatching's on random shots,
+  every decoder fixes every single fault, numba BP == numpy BP, and numba UF ≈ Python UF.
+* `test_metrics.py`: **computes decoder metrics** (logical error rate, Λ, fault-weight correction,
+  threshold, latency, parallel depth) via `qec/metrics.py` and records them with the `metrics_log`
+  fixture. `conftest.py` prints them as a table after the run and saves `out/metrics/test_metrics.json`.
 
-* every single fault is corrected (UF, weighted UF, MWPM; correlated MWPM from d=5),
-* circuit-level distance equals the code distance for CSS and XZZX, square and rectangular,
-* sliding window with one giant window gives *bit-identical* results to global decoding.
-
-Run `.venv\Scripts\python -m pytest -q` after any change to `qec/`. It takes a few seconds.
+Run `.venv\Scripts\python -m pytest -q` after any change to `qec/` (~1 minute).
 
 ## Gotchas we hit (so you don't)
+
+0. **Numba kernels compile on first call** (a few seconds, then cached in `__pycache__`). Time decoders
+   after a warm-up call, which `metrics.latency` does. Set `numba.set_num_threads(1)` for a fair latency
+   comparison with single-threaded PyMatching.
 
 1. **Z-basis memory hides Z errors.** Under biased noise, a CSS code looks amazing in a Z-basis memory.
    Use `--basis both`.

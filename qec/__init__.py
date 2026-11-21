@@ -11,12 +11,12 @@ Quick tour:
     print("logical error rate:", (pred != obs).any(axis=1).mean())
 """
 from .circuits import detector_error_model, memory_circuit
-from .decoders import DECODER_NAMES, make_decoder, sinter_decoders
+from .decoders import BASELINES, DECODER_NAMES, OURS, make_decoder, sinter_decoders
 from .noise import NoiseModel
 from .surface_code import SurfaceCode
 from .union_find import UnionFindDecoder, UnionFindSinterDecoder
 
 __all__ = [
     "SurfaceCode", "NoiseModel", "memory_circuit", "detector_error_model",
-    "make_decoder", "sinter_decoders", "DECODER_NAMES", "UnionFindDecoder", "UnionFindSinterDecoder",
+    "make_decoder", "sinter_decoders", "DECODER_NAMES", "OURS", "BASELINES", "UnionFindDecoder", "UnionFindSinterDecoder",
 ]
