@@ -1,0 +1,8 @@
+Sliding-window MWPM, 30 rounds, circuit noise p=0.004
+
+d=3: global 0.1006; buffer 0: 0.1434, buffer 1: 0.1042, buffer 2: 0.1019, buffer 3: 0.1009, buffer 4: 0.1006, buffer 5: 0.1006, buffer 7: 0.1006
+     latency per window 8.0 us vs 3.0 us to produce 3 rounds -> BACKLOG GROWS
+d=5: global 0.0471; buffer 0: 0.0872, buffer 1: 0.0604, buffer 2: 0.0514, buffer 3: 0.0483, buffer 4: 0.0474, buffer 5: 0.0473, buffer 7: 0.0471
+     latency per window 16.7 us vs 5.0 us to produce 5 rounds -> BACKLOG GROWS
+d=7: global 0.0208; buffer 0: 0.0514, buffer 1: 0.0355, buffer 2: 0.0271, buffer 3: 0.0227, buffer 4: 0.0215, buffer 5: 0.0211, buffer 7: 0.0208
+     latency per window 38.5 us vs 7.0 us to produce 7 rounds -> BACKLOG GROWS

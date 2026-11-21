@@ -1,0 +1,4 @@
+css pymatching noise=si1000 bias=0.5
+  threshold not bracketed by the p range   (d3/d5: no crossing, d5/d7: no crossing)
+css pymatching_correlated noise=si1000 bias=0.5
+  threshold not bracketed by the p range   (d3/d5: no crossing, d5/d7: no crossing)

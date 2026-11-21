@@ -1,0 +1,8 @@
+css pymatching noise=code-capacity bias=0.5
+  threshold ~0.1444   (d5/d9: 0.1435, d9/d13: 0.1453)
+css pymatching_correlated noise=code-capacity bias=0.5
+  threshold ~0.1656   (d5/d9: 0.1719, d9/d13: 0.1593)
+css union_find noise=code-capacity bias=0.5
+  threshold ~0.1385   (d5/d9: 0.1285, d9/d13: 0.1485)
+css union_find_weighted noise=code-capacity bias=0.5
+  threshold ~0.1347   (d5/d9: 0.1416, d9/d13: 0.1278)

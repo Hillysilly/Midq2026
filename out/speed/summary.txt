@@ -1,0 +1,23 @@
+circuit noise p=0.003, d rounds, Z memory, single thread
+
+decoder                  d    us/shot  us/round  logical err
+pymatching               3        0.3      0.08       0.0070
+pymatching_correlated    3        0.6      0.21       0.0065
+union_find               3       14.0      4.68       0.0089
+union_find_weighted      3       14.5      4.82       0.0077
+belief_matching          3       63.9     21.28       0.0060
+pymatching               5        1.6      0.32       0.0043
+pymatching_correlated    5        4.5      0.90       0.0031
+union_find               5       60.4     12.09       0.0055
+union_find_weighted      5       75.3     15.07       0.0044
+belief_matching          5     1735.4    347.08       0.0020
+pymatching               7        5.1      0.73       0.0014
+pymatching_correlated    7       14.2      2.03       0.0006
+union_find               7      172.1     24.59       0.0029
+union_find_weighted      7      229.2     32.74       0.0017
+belief_matching          7    11165.6   1595.08       0.0005
+pymatching               9       11.8      1.31       0.0003
+pymatching_correlated    9       33.0      3.67       0.0001
+union_find               9      367.0     40.78       0.0014
+union_find_weighted      9      522.3     58.04       0.0004
+belief_matching          9    36536.8   4059.65       0.0000

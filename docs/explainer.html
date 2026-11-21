@@ -1,0 +1,981 @@
+<title>QEC From Zero</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one reading column (~68ch) with wide "bench" figures that break out to ~1040px.
+   Colour follows Fowler's RGB = XYZ mnemonic: X is red, Y is green, Z is blue; detection events are yellow. */
+:root {
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --fg: #151a23;
+  --muted: #586273;
+  --line: #d8dee8;
+  --x: #d23c3c;
+  --y: #15924a;
+  --z: #2360e0;
+  --event: #f2b100;
+  --s1: #2360e0;
+  --s2: #d9770a;
+  --s3: #0f9466;
+  --s4: #8b3fd9;
+  --ok: #15924a;
+  --bad: #d23c3c;
+  --font-display: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Inter", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1016; --surface: #151a23; --fg: #e6e9ef; --muted: #9aa4b6; --line: #2a3242;
+    --x: #ff6f6f; --y: #4bd88a; --z: #73a7ff; --event: #ffd23f;
+    --s1: #73a7ff; --s2: #ffa94d; --s3: #3fd6a0; --s4: #c08bff; --ok: #4bd88a; --bad: #ff6f6f;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d1016; --surface: #151a23; --fg: #e6e9ef; --muted: #9aa4b6; --line: #2a3242;
+  --x: #ff6f6f; --y: #4bd88a; --z: #73a7ff; --event: #ffd23f;
+  --s1: #73a7ff; --s2: #ffa94d; --s3: #3fd6a0; --s4: #c08bff; --ok: #4bd88a; --bad: #ff6f6f;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: var(--font-body); font-size: 16.5px; line-height: 1.65;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 1040px; margin: 0 auto; padding-block: 40px 80px; }
+.col { max-width: 68ch; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; line-height: 1.15; margin: 0; }
+h1 { font-size: clamp(2.4rem, 6vw, 4rem); letter-spacing: -0.02em; }
+h2 { font-size: clamp(1.6rem, 3.2vw, 2.1rem); letter-spacing: -0.01em; }
+h3 { font-size: 1.15rem; }
+p { margin: 0; }
+a { color: var(--z); }
+code, .mono { font-family: var(--font-mono); font-size: 0.88em; }
+code { background: color-mix(in srgb, var(--line) 55%, transparent); padding: 1px 5px; border-radius: 4px; }
+pre { margin: 0; }
+.stack { display: flex; flex-direction: column; gap: 16px; }
+.muted { color: var(--muted); }
+.eyebrow { font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.cx { color: var(--x); font-weight: 600; }
+.cy { color: var(--y); font-weight: 600; }
+.cz { color: var(--z); font-weight: 600; }
+.cev { background: color-mix(in srgb, var(--event) 40%, transparent); padding: 0 4px; border-radius: 3px; }
+
+/* hero */
+.hero { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 40px; align-items: center; padding-bottom: 40px; border-bottom: 1px solid var(--line); }
+.hero .lede { font-size: 1.15rem; color: var(--muted); margin-top: 16px; max-width: 46ch; }
+.hero svg { width: 100%; height: auto; max-width: 420px; justify-self: center; }
+.path { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-top: 24px; }
+.path a { text-decoration: none; color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 0.88rem; background: var(--surface); display: flex; gap: 8px; }
+.path a:hover, .path a:focus-visible { border-color: var(--z); }
+.path b { font-family: var(--font-mono); color: var(--muted); font-weight: 400; }
+
+section.chapter { padding-block: 56px 8px; display: flex; flex-direction: column; gap: 20px; }
+.chapter-head { display: flex; flex-direction: column; gap: 6px; }
+
+.callout { border-left: 3px solid var(--z); padding: 4px 0 4px 16px; max-width: 68ch; }
+.callout.warn { border-color: var(--event); }
+.takeaway { font-family: var(--font-display); font-size: 1.1rem; }
+
+/* figures */
+.bench { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.bench-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+.figcap { font-size: 0.86rem; color: var(--muted); }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+button, select {
+  font: 500 0.9rem var(--font-body); color: var(--fg); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 7px; padding: 7px 12px; cursor: pointer;
+}
+button.primary { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+button:hover { border-color: var(--muted); }
+button:focus-visible, select:focus-visible, input:focus-visible, .qubit:focus-visible { outline: 2px solid var(--z); outline-offset: 2px; }
+label.inline { display: inline-flex; align-items: center; gap: 6px; font-size: 0.9rem; color: var(--muted); }
+input[type=range] { accent-color: var(--z); width: 120px; }
+.status { font-size: 0.95rem; min-height: 3.2em; padding: 10px 12px; border-radius: 8px; background: var(--bg); border: 1px solid var(--line); }
+.status.ok { border-color: var(--ok); }
+.status.bad { border-color: var(--bad); }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.85rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+svg text { fill: var(--fg); font-family: var(--font-body); }
+.svgwrap { width: 100%; overflow-x: auto; }
+.svgwrap svg { display: block; width: 100%; height: auto; }
+
+/* surface code svg */
+.plq { stroke: var(--line); stroke-width: 0.04; }
+.plq.X { fill: color-mix(in srgb, var(--x) 20%, var(--surface)); }
+.plq.Z { fill: color-mix(in srgb, var(--z) 20%, var(--surface)); }
+.plq.lit { fill: color-mix(in srgb, var(--event) 75%, var(--surface)); stroke: var(--event); stroke-width: 0.08; }
+.qubit circle { fill: var(--surface); stroke: var(--fg); stroke-width: 0.06; }
+.qubit { cursor: pointer; }
+.qubit text { font: 600 0.62px var(--font-mono); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.qubit.eX circle { fill: var(--x); stroke: var(--x); }
+.qubit.eZ circle { fill: var(--z); stroke: var(--z); }
+.qubit.eY circle { fill: var(--y); stroke: var(--y); }
+.qubit.eX text, .qubit.eZ text, .qubit.eY text { fill: var(--surface); }
+.corr { fill: none; stroke-width: 0.09; stroke-dasharray: 0.18 0.12; }
+.corr.X { stroke: var(--x); }
+.corr.Z { stroke: var(--z); }
+.logical { stroke-width: 0.12; stroke-linecap: round; fill: none; opacity: 0.75; }
+
+/* tables */
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--font-mono); font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+tr:last-child td { border-bottom: none; }
+td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* glossary */
+.gloss-search { width: 100%; max-width: 420px; font: 1rem var(--font-body); padding: 9px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); }
+dl.gloss { display: grid; grid-template-columns: minmax(0, 220px) minmax(0, 1fr); gap: 0; margin: 0; border-top: 1px solid var(--line); }
+dl.gloss dt, dl.gloss dd { padding: 10px 0; border-bottom: 1px solid var(--line); margin: 0; }
+dl.gloss dt { font-family: var(--font-display); font-weight: 600; padding-right: 16px; }
+.cmd { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow-x: auto; }
+.cmd pre { padding: 14px 16px; font-family: var(--font-mono); font-size: 0.84rem; line-height: 1.6; }
+.cmd .c { color: var(--muted); }
+.pill { font-family: var(--font-mono); font-size: 0.75rem; border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; color: var(--muted); white-space: nowrap; }
+.two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+footer { margin-top: 64px; padding-top: 20px; border-top: 1px solid var(--line); font-size: 0.85rem; color: var(--muted); }
+
+@media (max-width: 760px) {
+  .hero, .bench-grid, .two { grid-template-columns: minmax(0, 1fr); }
+  .hero svg { max-width: 300px; }
+  dl.gloss { grid-template-columns: minmax(0, 1fr); }
+  dl.gloss dt { border-bottom: none; padding-bottom: 0; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .plq, .qubit circle { transition: fill 160ms ease, stroke 160ms ease; }
+}
+</style>
+
+<div class="wrap">
+
+<header class="hero">
+  <div>
+    <div class="eyebrow">midq2026 · team primer</div>
+    <h1>QEC From Zero</h1>
+    <p class="lede">Quantum computers make mistakes about once every thousand operations. Useful algorithms need billions. This guide explains how the surface code closes that gap. Each idea has a toy you can click, and every chart comes from our own simulations.</p>
+    <nav class="path" aria-label="Chapters">
+      <a href="#why"><b>01</b> Why errors matter</a>
+      <a href="#repetition"><b>02</b> Repetition code</a>
+      <a href="#quantum"><b>03</b> The quantum twist</a>
+      <a href="#surface"><b>04</b> Surface code</a>
+      <a href="#decoding"><b>05</b> Decoding</a>
+      <a href="#time"><b>06</b> Errors in time</a>
+      <a href="#threshold"><b>07</b> Threshold</a>
+      <a href="#decoders"><b>08</b> Decoders</a>
+      <a href="#bias"><b>09</b> Biased noise</a>
+      <a href="#realtime"><b>10</b> Real time</a>
+      <a href="#compute"><b>11</b> Computing</a>
+      <a href="#toolkit"><b>12</b> Our toolkit</a>
+    </nav>
+  </div>
+  <svg id="hero-svg" viewBox="-0.6 -0.6 11.2 11.2" role="img" aria-label="A distance-5 surface code with a few errors and the detection events they cause"></svg>
+</header>
+
+<!-- 01 -->
+<section class="chapter" id="why">
+  <div class="chapter-head"><span class="eyebrow">01 · motivation</span><h2>Errors are the whole game</h2></div>
+  <div class="col stack">
+    <p>The best physical qubits today fail roughly once per 1,000 operations (an error rate around <span class="mono">p = 10⁻³</span>). Algorithms worth running, like chemistry simulation or breaking RSA, need millions to billions of operations. Running a billion steps at <span class="mono">10⁻³</span> each guarantees a wrong answer.</p>
+    <p>Better hardware alone won't close a gap of a million times or more. <strong>Quantum error correction (QEC)</strong> spreads one reliable <em>logical qubit</em> across many unreliable <em>physical qubits</em>. Add more physical qubits and the logical qubit gets exponentially more reliable, provided the hardware is already good enough. That "good enough" level is called the <a href="#threshold">threshold</a>.</p>
+    <div class="callout"><p class="takeaway">The goal: turn a 10⁻³ physical error rate into a 10⁻¹² logical error rate, using as few qubits as possible.</p></div>
+  </div>
+</section>
+
+<!-- 02 -->
+<section class="chapter" id="repetition">
+  <div class="chapter-head"><span class="eyebrow">02 · the simplest code</span><h2>Redundancy and parity checks</h2></div>
+  <div class="col stack">
+    <p>Classically, the obvious fix is to copy: store <span class="mono">0</span> as <span class="mono">00000</span>. If one bit flips you still see a clear majority. That's the <strong>repetition code</strong>. Its <strong>distance</strong> is <span class="mono">d = 5</span>: it takes 5 flips to turn one valid codeword into the other, so it can fix up to 2 flips.</p>
+    <p>Here's the trick that carries over to quantum: you don't need to read the bits themselves. You only need the <strong>parity checks</strong> between neighbours: "are bits 1 and 2 the same?" The pattern of failed checks is the <strong>syndrome</strong>. A <strong>decoder</strong> turns the syndrome into a guess of what went wrong.</p>
+  </div>
+  <div class="bench">
+    <div class="bench-grid">
+      <div class="stack">
+        <h3>Try it: flip bits, watch the checks</h3>
+        <div class="svgwrap"><svg id="rep-svg" viewBox="0 0 10.4 3" role="img" aria-label="Five bits with four parity checks between them"></svg></div>
+        <div class="controls">
+          <button id="rep-random">Random flips (p = 20%)</button>
+          <button id="rep-reset">Reset</button>
+        </div>
+        <div class="status" id="rep-status" aria-live="polite"></div>
+      </div>
+      <div class="stack">
+        <h3>More bits help only if p &lt; 50%</h3>
+        <div class="svgwrap"><svg id="rep-chart" viewBox="0 0 360 260" role="img" aria-label="Logical error rate of the repetition code versus physical error rate for n = 1, 3, 5, 7, 9"></svg></div>
+        <p class="figcap">Chance that majority vote fails, computed exactly. Below p = 0.5 each extra pair of bits pushes failures down. Above it, adding bits makes things worse. That crossing is the repetition code's <em>threshold</em>.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 03 -->
+<section class="chapter" id="quantum">
+  <div class="chapter-head"><span class="eyebrow">03 · what changes for qubits</span><h2>The quantum twist</h2></div>
+  <div class="col stack">
+    <p>Three things make qubits harder than bits:</p>
+    <ol class="stack" style="padding-left: 1.2em; margin: 0">
+      <li><strong>Two kinds of error.</strong> A bit can only flip. A qubit can suffer a bit flip <span class="cx">X</span> (|0⟩ ↔ |1⟩), a phase flip <span class="cz">Z</span> (|+⟩ ↔ |−⟩), or both at once, <span class="cy">Y</span>. Any small, messy error can be broken down into these three. Measuring the checks forces the qubit to pick one of them, so a decoder only ever deals with X, Y and Z.</li>
+      <li><strong>No copying.</strong> The no-cloning theorem forbids copying an unknown quantum state, so "store it five times" is off the table.</li>
+      <li><strong>No looking.</strong> Measuring a data qubit destroys the superposition you were protecting.</li>
+    </ol>
+    <p>The fix for all three is the same: measure <em>only parities</em>, using products of Paulis like <span class="mono"><span class="cx">X</span><span class="cx">X</span><span class="cx">X</span><span class="cx">X</span></span> or <span class="mono"><span class="cz">Z</span><span class="cz">Z</span><span class="cz">Z</span><span class="cz">Z</span></span> on a few neighbouring qubits. These are called <strong>stabilizers</strong>. The encoded state is a +1 eigenstate of all of them, so measuring them reveals nothing about the stored information. They <em>do</em> notice errors: an error that anticommutes with a stabilizer flips its result from +1 to −1.</p>
+    <div class="tablewrap" style="max-width: 68ch">
+      <table>
+        <thead><tr><th>error</th><th>flips</th><th>caught by</th></tr></thead>
+        <tbody>
+          <tr><td><span class="cx">X</span> bit flip</td><td>|0⟩ ↔ |1⟩</td><td><span class="cz">Z</span>-type checks</td></tr>
+          <tr><td><span class="cz">Z</span> phase flip</td><td>|+⟩ ↔ |−⟩</td><td><span class="cx">X</span>-type checks</td></tr>
+          <tr><td><span class="cy">Y</span> both (Y = iXZ)</td><td>both</td><td>both kinds</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="muted">Each check is measured by an extra <strong>measure qubit</strong> (also called an ancilla). It interacts with its neighbouring <strong>data qubits</strong> through a few CNOT gates and is then measured. Only the measure qubits are ever read out.</p>
+  </div>
+</section>
+
+<!-- 04 -->
+<section class="chapter" id="surface">
+  <div class="chapter-head"><span class="eyebrow">04 · the leading code</span><h2>The surface code</h2></div>
+  <div class="col stack">
+    <p>Lay <span class="mono">d × d</span> data qubits on a grid and colour the squares between them like a chessboard. <span class="cx">Red</span> squares measure <span class="mono">XXXX</span>, <span class="cz">blue</span> squares measure <span class="mono">ZZZZ</span>, and half-disc shapes on the edges measure two qubits. Every check only touches its nearest neighbours, which is why the surface code suits real chips: superconducting processors (Google, IBM) can only couple neighbouring qubits.</p>
+    <p>Below, <strong>click a data qubit</strong> to cycle its error: none → <span class="cx">X</span> → <span class="cz">Z</span> → <span class="cy">Y</span>. Checks that notice light up <span class="cev">yellow</span>. These are <strong>detection events</strong>.</p>
+  </div>
+  <div class="bench">
+    <div class="bench-grid">
+      <div class="svgwrap"><svg id="sc-svg" role="img" aria-label="Interactive surface code lattice"></svg></div>
+      <div class="stack">
+        <div class="controls">
+          <label class="inline" for="sc-d">distance
+            <select id="sc-d"><option value="3">3</option><option value="5" selected>5</option><option value="7">7</option></select>
+          </label>
+          <label class="inline" for="sc-p">p <input id="sc-p" type="range" min="1" max="20" value="6"> <span id="sc-pv" class="mono">6%</span></label>
+        </div>
+        <div class="controls">
+          <button id="sc-random">Random errors</button>
+          <button id="sc-decode" class="primary">Decode</button>
+          <button id="sc-clear">Clear</button>
+          <button id="sc-logical">Show logical operators</button>
+        </div>
+        <div class="status" id="sc-status" aria-live="polite"></div>
+        <div class="legend">
+          <span><i class="sw" style="background: color-mix(in srgb, var(--x) 30%, var(--surface))"></i>X check</span>
+          <span><i class="sw" style="background: color-mix(in srgb, var(--z) 30%, var(--surface))"></i>Z check</span>
+          <span><i class="sw" style="background: var(--event)"></i>detection event</span>
+          <span><i class="sw" style="border: 2px dashed var(--muted)"></i>decoder's correction</span>
+        </div>
+        <p class="figcap">Things to try. (1) Put an X on a middle qubit: two blue checks light up. (2) Put X on two neighbours in a row: the checks between them cancel and only the ends of the chain light up. (3) Put X along a whole column: nothing lights up, yet the logical qubit has flipped. That's a <strong>logical error</strong>, and it needs at least d errors.</p>
+      </div>
+    </div>
+  </div>
+  <div class="col stack">
+    <p>Point (3) is the key idea. Errors form <strong>chains</strong>, and a check lights up only at the <em>ends</em> of a chain. A chain stretching from one boundary to the opposite boundary has no ends, so it is invisible, and it acts on the stored information. Those chains are the <strong>logical operators</strong>: <span class="cx">X<sub>L</sub></span> runs top to bottom and <span class="cz">Z<sub>L</sub></span> runs left to right. The shortest one has length <span class="mono">d</span>, so a larger code needs more errors to fail.</p>
+    <p class="muted">A distance-d patch uses d² data qubits plus d² − 1 measure qubits: 17 qubits for d = 3, 49 for d = 5, 97 for d = 7. Google's 2024 "below threshold" chip ran d = 7 on 101 of its 105 qubits.</p>
+  </div>
+</section>
+
+<!-- 05 -->
+<section class="chapter" id="decoding">
+  <div class="chapter-head"><span class="eyebrow">05 · the classical half</span><h2>Decoding is matching up the dots</h2></div>
+  <div class="col stack">
+    <p>The decoder sees only the yellow dots. It has to guess which error chains made them. Each chain has two ends, or one end if it runs into a boundary, so decoding means <strong>pairing up the dots</strong> with each other or with the boundary.</p>
+    <p>Low physical error rates make short chains more likely than long ones. So the best guess is the pairing with the <strong>shortest total chain length</strong>. That's <strong>Minimum-Weight Perfect Matching (MWPM)</strong>, the workhorse decoder (review §5.1). The "Decode" button above runs exact MWPM in your browser. Then it checks whether the leftover error (the real errors plus the correction) is harmless or crosses the whole patch.</p>
+    <p><strong>Important:</strong> the correction doesn't need to match the real errors exactly. If the leftover forms closed loops, those are products of stabilizers and do nothing to the logical qubit. Many different corrections are equally good. This is called <strong>degeneracy</strong>, and it's what makes quantum decoding different from classical decoding. The decoder fails only when the leftover chain goes from one side to the other.</p>
+    <div class="callout warn"><p>Try p = 12% at d = 3 several times. Sometimes the matching connects the dots "the wrong way round" and completes a logical chain. Each failure is a decoding error, and how often it happens is the number we measure.</p></div>
+  </div>
+</section>
+
+<!-- 06 -->
+<section class="chapter" id="time">
+  <div class="chapter-head"><span class="eyebrow">06 · measurements lie too</span><h2>Errors in time: detectors</h2></div>
+  <div class="col stack">
+    <p>Real check measurements are also noisy: a measure qubit can report the wrong bit. A single round of checks can't tell "a data qubit flipped" apart from "the measurement lied". So we <strong>repeat the checks every round</strong> (roughly d rounds) and look at what <em>changed</em> between rounds.</p>
+    <p>A <strong>detector</strong> compares one check's result in consecutive rounds (Fowler §IV). In the toy below, the repetition code runs for 6 rounds. A data error lights the checks on either side from that round on, but the detectors show only the moment it happened: <strong>two dots side by side in space</strong>. A measurement error flips one result for one round, giving <strong>two dots one above the other in time</strong>. Decoding becomes matching in space-time, with the same algorithm.</p>
+  </div>
+  <div class="bench">
+    <div class="controls">
+      <span class="muted" style="font-size: 0.9rem">Click to add:</span>
+      <button id="st-mode-data" class="primary" aria-pressed="true">data error</button>
+      <button id="st-mode-meas" aria-pressed="false">measurement error</button>
+      <button id="st-reset">Reset</button>
+    </div>
+    <div class="two">
+      <div class="stack"><h3>Raw check results</h3><div class="svgwrap"><svg id="st-raw" viewBox="0 0 320 300" role="img" aria-label="Raw parity check results over six rounds"></svg></div></div>
+      <div class="stack"><h3>Detectors (what changed)</h3><div class="svgwrap"><svg id="st-det" viewBox="0 0 320 300" role="img" aria-label="Detection events over six rounds"></svg></div></div>
+    </div>
+    <p class="figcap">Columns are the 4 parity checks of a 5-bit repetition code, rows are rounds (time runs down). In "data error" mode, click a gap between columns to flip a data bit in that round. In "measurement error" mode, click a cell to make that one measurement lie.</p>
+  </div>
+</section>
+
+<!-- 07 -->
+<section class="chapter" id="threshold">
+  <div class="chapter-head"><span class="eyebrow">07 · the number everyone quotes</span><h2>The threshold</h2></div>
+  <div class="col stack">
+    <p>Run many simulated shots and count how often the decoder fails. Do it for several distances d and physical error rates p. The curves cross at the <strong>threshold</strong> <span class="mono">p<sub>th</sub></span>. Below it, a bigger code is better, and the gain is exponential: roughly <span class="mono">p<sub>L</sub> ≈ A·(p/p<sub>th</sub>)<sup>(d+1)/2</sup></span>. Above it, a bigger code just gives errors more room to spread.</p>
+    <p>The threshold depends on three things together: the <strong>code</strong>, the <strong>decoder</strong> and the <strong>noise model</strong>. Papers quote very different numbers because they assume different noise models:</p>
+  </div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>noise model</th><th>what can fail</th><th>MWPM threshold (ours)</th><th>use it for</th></tr></thead>
+      <tbody id="noise-table"></tbody>
+    </table>
+  </div>
+  <div class="bench">
+    <div class="controls" id="th-controls" role="group" aria-label="Choose noise model"></div>
+    <div class="svgwrap"><svg id="th-chart" viewBox="0 0 640 360" role="img" aria-label="Logical error rate versus physical error rate for several code distances"></svg></div>
+    <p class="figcap" id="th-cap"></p>
+  </div>
+  <div class="col stack">
+    <p><strong>Λ (Lambda)</strong> is how much the logical error rate drops each time d grows by 2. It's the number hardware teams report. Google's 2024 chip measured Λ ≈ 2.1. In our simulation with superconducting-style noise (SI1000, where measurements are the noisiest step), MWPM gives:</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>physical error p</th><th>Λ, MWPM</th><th>Λ, correlated MWPM</th></tr></thead>
+        <tbody>
+          <tr><td class="num">0.10%</td><td class="num">≈ 8.5</td><td class="num">≈ 10</td></tr>
+          <tr><td class="num">0.20%</td><td class="num">≈ 4</td><td class="num">≈ 5</td></tr>
+          <tr><td class="num">0.30%</td><td class="num">≈ 2.6</td><td class="num">≈ 3.3</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="muted">So Google's Λ ≈ 2.1 corresponds to p ≈ 0.3% in this model. Each halving of p roughly doubles Λ, and a larger Λ means a smaller code for the same target. Going from Λ = 2 to Λ = 4 halves the distance needed.</p>
+  </div>
+</section>
+
+<!-- 08 -->
+<section class="chapter" id="decoders">
+  <div class="chapter-head"><span class="eyebrow">08 · speed vs accuracy</span><h2>Decoders compared</h2></div>
+  <div class="col stack">
+    <p>Truly optimal decoding, which accounts for degeneracy, is #P-hard, so every practical decoder is an approximation. The review compares four families. We implemented or wrapped each one so they all run on exactly the same circuits:</p>
+  </div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>decoder</th><th>idea</th><th>review threshold<br>(code capacity)</th><th>ours</th><th>speed</th></tr></thead>
+      <tbody id="dec-table"></tbody>
+    </table>
+  </div>
+  <div class="bench">
+    <h3>Circuit-level noise, d = 5: logical error rate per round</h3>
+    <div class="svgwrap"><svg id="dec-chart" viewBox="0 0 640 340" role="img" aria-label="Decoder comparison under circuit-level noise"></svg></div>
+    <p class="figcap">Lower is better. Correlated MWPM halves MWPM's error rate at d = 7 for about 3× the time, the best trade on this page. Belief-matching runs belief propagation to re-weight the matching graph, which gains accuracy at a big cost in speed. Union-Find is the fastest algorithm in principle (almost linear time), but here it's written in plain Python, so its wall-clock speed isn't comparable.</p>
+  </div>
+</section>
+
+<!-- 09 -->
+<section class="chapter" id="bias">
+  <div class="chapter-head"><span class="eyebrow">09 · use the noise you have</span><h2>Biased noise and the XZZX code</h2></div>
+  <div class="col stack">
+    <p>Many qubits, such as spin qubits, trapped ions and cat qubits, suffer mostly <span class="cz">Z</span> errors, because they lose phase much faster than they lose energy (T₂ ≪ T₁). The <strong>bias</strong> is <span class="mono">η = p<sub>Z</sub>/(p<sub>X</sub>+p<sub>Y</sub>)</span>, and η = 0.5 means all three errors are equally likely.</p>
+    <p>In the ordinary (CSS) surface code, all those Z errors land on the X checks, so half the decoder is overloaded and the threshold <em>drops</em>. The <strong>XZZX code</strong> applies a Hadamard to every other data qubit, so each check measures <span class="mono"><span class="cx">X</span><span class="cz">Z</span><span class="cz">Z</span><span class="cx">X</span></span>. Same qubits, same wiring, same decoder. Z errors now look like errors on simple repetition codes running diagonally, and the threshold <em>rises</em> toward 50%.</p>
+  </div>
+  <div class="two">
+    <div class="bench">
+      <h3>Threshold vs bias (code capacity)</h3>
+      <div class="svgwrap"><svg id="bias-chart" viewBox="0 0 360 280" role="img" aria-label="Threshold versus bias for CSS and XZZX codes"></svg></div>
+      <p class="figcap" id="bias-cap"></p>
+    </div>
+    <div class="bench">
+      <h3>Circuit-level, η = 100</h3>
+      <div class="svgwrap"><svg id="bias100-chart" viewBox="0 0 360 280" role="img" aria-label="CSS versus XZZX logical error rate under biased circuit noise"></svg></div>
+      <p class="figcap" id="bias100-cap"></p>
+    </div>
+  </div>
+  <div class="callout warn col"><p><strong>A common trap:</strong> a CSS code run as a Z-basis memory looks <em>great</em> under Z-biased noise, because that experiment can only see X errors. Always add up the Z- and X-basis memory failures (<code>bench.py --basis both</code>).</p></div>
+</section>
+
+<!-- 10 -->
+<section class="chapter" id="realtime">
+  <div class="chapter-head"><span class="eyebrow">10 · the clock is ticking</span><h2>Real-time decoding</h2></div>
+  <div class="col stack">
+    <p>A superconducting chip produces a new round of syndrome data about every microsecond, indefinitely. If the decoder is slower than that, unprocessed data piles up without limit: the <strong>backlog problem</strong> (review Appendix A). The computer can't apply a measurement-dependent gate until the decoder catches up.</p>
+    <p>The fix is a <strong>sliding window</strong>: decode a few rounds at a time, commit only the oldest part of the window, then slide forward. The uncommitted <strong>buffer</strong> lets the decoder look ahead before deciding. Our experiment shows how big that buffer needs to be:</p>
+    <p class="muted">On speed: PyMatching decodes a batch of d = 5 shots in about 0.3 µs per round on one laptop core, faster than the 1 µs hardware cycle. The hard part is <em>latency</em>, getting each window's answer back quickly. A single call from Python costs more than 10 µs in overhead alone, which is why real systems run decoders in C++ or on FPGAs and decode several windows in parallel.</p>
+  </div>
+  <div class="bench">
+    <div class="svgwrap"><svg id="rt-chart" viewBox="0 0 640 320" role="img" aria-label="Logical error rate versus buffer size for sliding-window decoding"></svg></div>
+    <p class="figcap" id="rt-cap"></p>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="chapter" id="compute">
+  <div class="chapter-head"><span class="eyebrow">11 · beyond storing a qubit</span><h2>From memory to computation</h2></div>
+  <div class="col stack">
+    <p>Everything so far is a <strong>memory experiment</strong>: hold one logical qubit and check that it survived. Fowler's 2025 notes show how to compute with surface-code patches:</p>
+    <ul class="stack" style="padding-left: 1.2em; margin: 0">
+      <li><strong>Lattice surgery.</strong> Merge two patches by measuring checks along their shared edge, then split them again. This measures joint operators like <span class="mono">X<sub>L</sub>X<sub>L</sub></span> and builds a logical CNOT. Fowler draws these as 3D pipe diagrams with time running upward.</li>
+      <li><strong>Nearly free Clifford gates.</strong> Hadamard, S and CNOT cost little more than moving patches around. The ZX-calculus offers rules for simplifying these 3D layouts.</li>
+      <li><strong>Magic states for T gates.</strong> Clifford gates alone can't beat a classical computer. A non-Clifford gate (T) needs a specially prepared <em>magic state</em>, made by "cultivation" or by distillation factories. These factories take up a large share of a real algorithm's qubit budget.</li>
+      <li><strong>Reaction time.</strong> Gates that depend on measurement results have to wait for the decoder. That's another reason real-time decoding matters.</li>
+    </ul>
+    <div class="callout"><p>Numbers for a pitch, from fits to our own simulations (<code>estimate.py</code>): at p = 10⁻³, reaching 10⁻¹² per round takes d ≈ 19 (uniform circuit noise) to d ≈ 23 (SI1000). That's about 700–1,000 physical qubits per logical qubit. 100 logical qubits, doubled for routing and magic-state factories, come to roughly <strong>150,000–210,000 physical qubits</strong>. At p = 2×10⁻³ the count more than doubles.</p></div>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="chapter" id="toolkit">
+  <div class="chapter-head"><span class="eyebrow">12 · hands on</span><h2>Our toolkit</h2></div>
+  <div class="col stack">
+    <p>Everything on this page was produced by the <code>qec</code> package in our repo. The pipeline is the same each time: <strong>build a noisy circuit</strong> (Stim) → <strong>get the detector error model</strong> (the graph of which faults light which detectors) → <strong>sample shots</strong> → <strong>decode</strong> → <strong>count failures</strong>.</p>
+  </div>
+  <div class="cmd"><pre><span class="c"># one experiment, both decoders, with circuit diagrams</span>
+.venv\Scripts\python quickstart.py -d 5 --p 0.003 --diagrams
+
+<span class="c"># threshold sweep (any noise model, code variant, decoder)</span>
+.venv\Scripts\python bench.py --name mine --noise circuit --decoders pymatching union_find_weighted
+.venv\Scripts\python bench.py --name xzzx --noise circuit --bias 100 --variants css xzzx --basis both
+
+<span class="c"># threshold vs bias, real-time windows, qubit-count estimates</span>
+.venv\Scripts\python bias_sweep.py
+.venv\Scripts\python realtime.py
+.venv\Scripts\python estimate.py --stats out\circuit_decoders\stats.csv --p 0.001 --target 1e-12</pre></div>
+  <div class="cmd"><pre><span class="c"># in Python</span>
+from qec import SurfaceCode, NoiseModel, detector_error_model, make_decoder
+
+code = SurfaceCode(5, variant="xzzx")                  <span class="c"># or SurfaceCode(dx=3, dz=7)</span>
+circuit = code.memory_circuit(NoiseModel.circuit(1e-3, bias=10), basis="Z")
+dem = detector_error_model(circuit)
+dets, obs = circuit.compile_detector_sampler().sample(10_000, separate_observables=True)
+pred = make_decoder("pymatching", dem).decode_batch(dets)
+print((pred != obs).any(axis=1).mean())                <span class="c"># logical error rate</span></pre></div>
+</section>
+
+<section class="chapter" id="glossary">
+  <div class="chapter-head"><span class="eyebrow">reference</span><h2>Glossary</h2></div>
+  <input class="gloss-search" id="gloss-q" type="search" placeholder="Filter terms, e.g. detector" aria-label="Filter glossary">
+  <dl class="gloss" id="gloss"></dl>
+</section>
+
+<section class="chapter" id="reading">
+  <div class="chapter-head"><span class="eyebrow">reference</span><h2>Further reading</h2></div>
+  <ul class="col stack" style="padding-left: 1.2em; margin: 0">
+    <li>deMarti iOlius et al., <a href="https://arxiv.org/abs/2307.14989">Decoding algorithms for surface codes</a> (2024). The decoder review this page follows.</li>
+    <li>A. G. Fowler, <em>Surface code quantum computation</em> (draft, March 2025). Detectors, lattice surgery, ZX-calculus. The older, gentler version is <a href="https://arxiv.org/abs/1208.0928">arXiv:1208.0928</a>.</li>
+    <li><a href="https://github.com/quantumlib/Stim">Stim</a> (circuit simulator) and its getting-started notebook. <a href="https://github.com/oscarhiggott/PyMatching">PyMatching</a> (MWPM decoder).</li>
+    <li>Google Quantum AI, <a href="https://arxiv.org/abs/2408.13687">Quantum error correction below the surface code threshold</a> (2024).</li>
+    <li>Bonilla Ataides et al., <a href="https://arxiv.org/abs/2009.07851">The XZZX surface code</a> (2021).</li>
+  </ul>
+</section>
+
+<footer>Built for the midq2026 team. Simulations: Stim + PyMatching + our <code>qec</code> package. Interactive decoders run exact minimum-weight matching in your browser.</footer>
+</div>
+
+<script>
+const DATA = /*DATA_START*/{"thresholds":{"code_capacity":0.14443,"phenomenological":0.04684,"circuit":0.013},"curves":{"code_capacity":{"5":[[0.08,0.0561703,0.05171454,0.06098528],[0.1,0.09271278,0.08525927,0.10074612],[0.12,0.14145113,0.13143228,0.15209996],[0.13,0.17010463,0.15775184,0.1832143],[0.14,0.20687593,0.19348869,0.22093568],[0.15,0.21554559,0.20194093,0.22980287],[0.16,0.2623869,0.24489205,0.28066703],[0.18,0.32313658,0.30441567,0.34244199]],"9":[[0.08,0.03013748,0.02764749,0.03284415],[0.1,0.06556409,0.06048576,0.07103655],[0.12,0.12039368,0.11107601,0.13037833],[0.13,0.15216741,0.14039453,0.16473832],[0.14,0.19461883,0.1815554,0.2083829],[0.15,0.24041361,0.22346616,0.25821896],[0.16,0.28392934,0.26595375,0.30261901],[0.18,0.36191297,0.34260535,0.38167694]],"13":[[0.08,0.01381372,0.0126759,0.01505211],[0.1,0.04411892,0.04052088,0.04802047],[0.12,0.10254033,0.09472472,0.11092178],[0.13,0.13618677,0.12633533,0.14667744],[0.14,0.18176383,0.16906202,0.19519575],[0.15,0.25463162,0.23732315,0.272751],[0.16,0.29513141,0.27692636,0.31401352],[0.18,0.4155744,0.38904119,0.44260626]]},"phenomenological":{"5":[[0.01,0.00066778,0.00059974,0.00074354],[0.015,0.00215684,0.00195681,0.00237726],[0.02,0.00535896,0.00486067,0.00590809],[0.025,0.00929712,0.00844187,0.01023839],[0.03,0.01580352,0.01441059,0.01732996],[0.035,0.02667434,0.02406977,0.02955988],[0.04,0.03200465,0.0290772,0.0352278],[0.045,0.04609716,0.04162155,0.05106968],[0.05,0.06013413,0.05464814,0.06621524],[0.055,0.07962595,0.07261808,0.08743396]],"9":[[0.01,2.223e-05,1.439e-05,3.433e-05],[0.015,0.00016021,0.00013608,0.00018861],[0.02,0.00073711,0.00066872,0.00081249],[0.025,0.00231195,0.00209525,0.00255101],[0.03,0.00591661,0.00537182,0.00651652],[0.035,0.01218555,0.01104176,0.01344836],[0.04,0.01985114,0.018066,0.02181736],[0.045,0.03939163,0.03576664,0.04344154],[0.05,0.06813639,0.05959368,0.07863575],[0.055,0.09135952,0.07832188,0.1093105]],"13":[[0.015,1.462e-05,9.36e-06,2.283e-05],[0.02,0.00010706,9.067e-05,0.00012641],[0.025,0.00067421,0.00061129,0.0007436],[0.03,0.00227244,0.00206268,0.0025035],[0.035,0.00663701,0.00601557,0.0073229],[0.04,0.01764246,0.01586792,0.01962761],[0.045,0.03599854,0.03161746,0.04118087],[0.05,0.097628,0.07707857,0.16764816],[0.055,0.5,0.5,0.5]]},"circuit":{"3":[[0.002,0.00108234,0.00092792,0.00126243],[0.003,0.00227494,0.00203175,0.00254717],[0.004,0.0042757,0.00381956,0.00478607],[0.005,0.00589468,0.00527106,0.00659164],[0.006,0.00754804,0.00674131,0.00845056],[0.008,0.01380552,0.01240493,0.01536215],[0.01,0.02230409,0.02004129,0.02481752],[0.012,0.02990597,0.02695117,0.03317741],[0.014,0.0379903,0.03413288,0.04227292],[0.016,0.04832267,0.04301874,0.05426452],[0.018,0.06062183,0.05450068,0.06741723]],"5":[[0.002,0.00020417,0.00015528,0.00026844],[0.003,0.00068588,0.0005904,0.00079679],[0.004,0.00159819,0.00142768,0.00178903],[0.005,0.00277615,0.00248395,0.00310263],[0.006,0.00423288,0.00378016,0.0047396],[0.008,0.01060057,0.00949229,0.01183724],[0.01,0.01885647,0.01700075,0.02091315],[0.012,0.03030323,0.02747789,0.03341936],[0.014,0.04383601,0.03951983,0.04863611],[0.016,0.05195593,0.04706406,0.05738177],[0.018,0.06465762,0.05699813,0.07345404]],"7":[[0.002,4.573e-05,2.815e-05,7.429e-05],[0.003,0.00021743,0.00017371,0.00027214],[0.004,0.00064535,0.00056623,0.00073552],[0.005,0.00147158,0.00131511,0.00164663],[0.006,0.0027971,0.00249639,0.00313394],[0.008,0.00801089,0.00719008,0.00892501],[0.01,0.01722751,0.0154648,0.01919168],[0.012,0.02841536,0.02549509,0.03168013],[0.014,0.0428241,0.03758255,0.0488698],[0.016,0.0681539,0.06007282,0.07767448],[0.018,0.09005858,0.07882122,0.10394316]]}},"decoders":{"pymatching":0.14443,"pymatching_correlated":0.16559,"union_find":0.13851,"union_find_weighted":0.13468},"thresholds_per_shot":{"phenomenological":0.03798,"circuit":0.00678},"decoder_curves":{"pymatching":[[0.002,0.0002041666680433485,0.00015528248054780258,0.00026843589111830157],[0.003,0.0006858791412897025,0.0005903967445476943,0.0007967914675779397],[0.004,0.00159819297822128,0.0014276811861752003,0.0017890348431277014],[0.005,0.0027761509838152287,0.002483949161864174,0.003102628920698347],[0.006,0.004232883083379213,0.003780164815782139,0.004739596962893222],[0.008,0.010600570442276913,0.009492290779105406,0.011837238555788943],[0.01,0.018856471051909074,0.01700074755229991,0.020913148767285006],[0.012,0.03030322985026851,0.027477887481119345,0.03341936498756354],[0.014,0.043836009662944264,0.039519833143805916,0.048636112969146605],[0.016,0.05195593192165904,0.047064059601209074,0.05738177299760355],[0.018,0.0646576187215489,0.056998126911083136,0.07345404090181845]],"pymatching_correlated":[[0.002,0.000128065586376791,9.071278733535637e-05,0.00018079637596002396],[0.003,0.0004929711241726253,0.0004131517169566057,0.0005882024202861214],[0.004,0.001193685953928325,0.0010652015039959717,0.0013376482238656173],[0.005,0.002250907357519094,0.0020093904290321984,0.002521385184283298],[0.006,0.0036732817075122437,0.003290146594459531,0.004100870844989224],[0.008,0.008152895900052914,0.007313634384842949,0.009087817808477783],[0.01,0.016477727342355253,0.014764403718228458,0.018388185847418026],[0.012,0.022864678104978997,0.020498215652188956,0.025502677530921114],[0.014,0.03672290405599721,0.03290738877290028,0.04098572768332076],[0.016,0.046733323197168775,0.042212764861637775,0.05175457292599783],[0.018,0.06600754357748162,0.05821349611887355,0.0749611680069131]],"union_find":[[0.002,0.00032041038819791146,0.00025744144545714054,0.00039877515260944296],[0.003,0.0010564549654870636,0.0009360687408588864,0.0011923060105840655],[0.004,0.0023881036853773963,0.002134196370512653,0.0026721439259097535],[0.005,0.004043640170802332,0.003615909319263977,0.004521768305295992],[0.006,0.007001225152828472,0.006270376475212502,0.007816740993833948],[0.008,0.014659434859686127,0.013059372652506285,0.016453853103549576],[0.01,0.024534674566501158,0.022062860018928765,0.027282061919689682],[0.012,0.04113189784670268,0.037005982134377724,0.04572709340925196],[0.014,0.05265968189331999,0.047099218605905435,0.05891161839525483],[0.016,0.07837433868844551,0.06929765116134756,0.08885681858728106],[0.018,0.08895648443636217,0.07869454399024423,0.10090395955271858]],"union_find_weighted":[[0.002,0.0002562625473761515,0.00020067983055710448,0.0003272351299589138],[0.003,0.0007582965691441679,0.0006575075112714712,0.0008745223505655098],[0.004,0.0016300480508074089,0.0014577315521869805,0.0018226986226610453],[0.005,0.0033045526558340144,0.002952172866694802,0.003698854122057671],[0.006,0.0053185422248061,0.004768040080517233,0.00593228999593054],[0.008,0.011692039077276895,0.010520468282375128,0.012993021207645505],[0.01,0.02091597813260382,0.01882078209572774,0.02324275045558244],[0.012,0.03213794525514879,0.028647655214174228,0.036054983288009046],[0.014,0.040563006794810064,0.03596767889211466,0.0457567276251134],[0.016,0.058686669252832446,0.05263405613701283,0.06548811290015644],[0.018,0.06148442609968752,0.0541376858288532,0.06991768663344167]],"belief_matching":[[0.002,0.00013607404442850246,9.737315174285222e-05,0.000190153668431281],[0.003,0.0005010030105400687,0.0004204768218956101,0.000596941837555931],[0.004,0.000975801326997261,0.000860415463774078,0.0011066443904903522],[0.005,0.0018744084719027887,0.0016734029216217694,0.002099510665428961],[0.006,0.0037329215295391904,0.003331482774232397,0.004182554564100938],[0.008,0.007285784313120491,0.006499116261434623,0.00816707535801442],[0.01,0.014514023995980452,0.012925269793507665,0.016296385360857535],[0.012,0.02093814835929475,0.018630103042965973,0.023530070686361648]]},"circuit_thresholds":{"belief_matching":null,"pymatching":0.013,"pymatching_correlated":0.01336,"union_find":0.0096,"union_find_weighted":0.013},"bias_sweep":{"css":{"0.5":0.15038189926115778,"1":0.14989855700617916,"10":0.09786208725496809,"100":0.0978265081764328,"1000":0.09557245138653249,"3":0.11139325962700723,"30":0.09595598137329214},"xzzx":{"0.5":0.16057725245842244,"1":0.16578561881700069,"10":0.25278381183108134,"100":0.44831608789243865,"1000":0.4691332098807314,"3":0.20388642728769527,"30":0.34912615395045554}},"bias100":{"css":{"3":[[0.002,0.00154067,0.0013643,0.00174162],[0.003,0.00314732,0.00280358,0.00353337],[0.004,0.00612422,0.00546889,0.00685788],[0.005,0.00921035,0.00821972,0.01032002],[0.006,0.01292824,0.01156054,0.01445727],[0.008,0.02095537,0.01879872,0.02335888],[0.01,0.03282973,0.02945823,0.03658821],[0.012,0.04602472,0.04128265,0.05132047],[0.015,0.06413265,0.05711039,0.07205491],[0.02,0.1081296,0.09742778,0.12022159],[0.025,0.1584238,0.13870735,0.18220012],[0.03,0.21397821,0.18413202,0.25420391],[0.035,0.31906827,0.25412234,0.5]],"5":[[0.002,0.00038841,0.00034519,0.00044043],[0.003,0.00111733,0.00099566,0.00125705],[0.004,0.00279937,0.00249465,0.00314396],[0.005,0.00471437,0.00420961,0.00528147],[0.006,0.00721676,0.00646304,0.00805956],[0.008,0.01831902,0.01647633,0.02036729],[0.01,0.02823569,0.02551083,0.0312527],[0.012,0.03990532,0.03581863,0.04447034],[0.015,0.065348,0.05750088,0.07439904],[0.02,0.10315969,0.09073329,0.11803215],[0.025,0.26928105,0.19844093,0.5],[0.03,0.37918014,0.21302686,0.5],[0.035,0.5,0.5,0.5]],"7":[[0.002,8.719e-05,7.303e-05,0.00010684],[0.003,0.00046292,0.00041351,0.00052098],[0.004,0.00116486,0.00104167,0.00130539],[0.005,0.00274124,0.00245067,0.00306856],[0.006,0.00496449,0.00444214,0.00555073],[0.008,0.01255972,0.01127518,0.01399259],[0.01,0.02793484,0.02504041,0.03117594],[0.012,0.04621155,0.0406085,0.05268552],[0.015,0.07523256,0.06618197,0.08604186],[0.02,0.15800911,0.12862224,0.2260608],[0.025,0.5,0.19998766,0.5],[0.03,0.5,0.17653315,0.5],[0.035,0.5,0.5,0.5]]},"xzzx":{"3":[[0.002,0.0010892,0.00097182,0.00122076],[0.003,0.00242479,0.00216524,0.00271549],[0.004,0.00388865,0.00347541,0.00435115],[0.005,0.0057615,0.00514561,0.00645137],[0.006,0.00797007,0.00712186,0.00891981],[0.008,0.01418924,0.01268742,0.0158706],[0.01,0.02202151,0.01965823,0.0246742],[0.012,0.02985909,0.02670821,0.03339214],[0.015,0.04676114,0.04177806,0.05237222],[0.02,0.07011024,0.06236266,0.07892308],[0.025,0.11672754,0.10318678,0.13253869],[0.03,0.17037599,0.14875769,0.19719674],[0.035,0.23620042,0.19705176,0.29775556]],"5":[[0.002,9.103e-05,6.814e-05,0.00012161],[0.003,0.00024624,0.00020645,0.00029374],[0.004,0.00060048,0.00053523,0.0006737],[0.005,0.0010973,0.00097991,0.00122877],[0.006,0.0019624,0.00175212,0.00219801],[0.008,0.0042118,0.00375947,0.00471896],[0.01,0.00781602,0.0069818,0.00875147],[0.012,0.0139236,0.01242877,0.01560349],[0.015,0.02341028,0.0209014,0.02623809],[0.02,0.05101562,0.0450902,0.05786417],[0.025,0.10602125,0.09167659,0.12416241],[0.03,0.20128142,0.15612885,0.5],[0.035,0.5,0.26151053,0.5]],"7":[[0.002,8.57e-06,4.01e-06,1.863e-05],[0.003,3.001e-05,1.971e-05,4.579e-05],[0.004,8.504e-05,6.6e-05,0.00010958],[0.005,0.00020955,0.00017824,0.00024637],[0.006,0.00044469,0.00039695,0.00049819],[0.008,0.00133267,0.00118986,0.00149269],[0.01,0.00323553,0.00288699,0.00362656],[0.012,0.00606912,0.0054138,0.00680531],[0.015,0.01454728,0.01294893,0.01635375],[0.02,0.03940353,0.03481047,0.04473719],[0.025,0.09243102,0.07882881,0.11076813],[0.03,0.5,0.5,0.5],[0.035,0.5,0.5,0.5]]}},"bias100_note":"Both memory bases summed, MWPM, \u03b7 = 100. At p = 0.5% and d = 7, XZZX fails 2.1e-04 per round vs 2.7e-03 for CSS (13\u00d7 lower).","speed":{"pymatching":{"3":{"us_per_shot":0.2535599982365966,"us_per_round":0.08451999941219886,"ler":0.007,"shots":20000},"5":{"us_per_shot":1.6154700017068535,"us_per_round":0.3230940003413707,"ler":0.00435,"shots":20000},"7":{"us_per_shot":5.132334999507293,"us_per_round":0.7331907142153276,"ler":0.00145,"shots":20000},"9":{"us_per_shot":11.797545000445098,"us_per_round":1.3108383333827887,"ler":0.00035,"shots":20000}},"pymatching_correlated":{"3":{"us_per_shot":0.6396299984771758,"us_per_round":0.21320999949239194,"ler":0.0065,"shots":20000},"5":{"us_per_shot":4.4758500007446855,"us_per_round":0.8951700001489371,"ler":0.0031,"shots":20000},"7":{"us_per_shot":14.214424998499453,"us_per_round":2.030632142642779,"ler":0.00065,"shots":20000},"9":{"us_per_shot":32.98880499787629,"us_per_round":3.6654227775418096,"ler":0.00015,"shots":20000}},"union_find":{"3":{"us_per_shot":14.02935499791056,"us_per_round":4.676451665970187,"ler":0.00885,"shots":20000},"5":{"us_per_shot":60.448984999675304,"us_per_round":12.08979699993506,"ler":0.0055,"shots":20000},"7":{"us_per_shot":172.11769500281662,"us_per_round":24.588242143259517,"ler":0.0029,"shots":20000},"9":{"us_per_shot":367.02005499973893,"us_per_round":40.7800061110821,"ler":0.00145,"shots":20000}},"union_find_weighted":{"3":{"us_per_shot":14.453400002093986,"us_per_round":4.8178000006979955,"ler":0.0077,"shots":20000},"5":{"us_per_shot":75.34239999949932,"us_per_round":15.068479999899864,"ler":0.0044,"shots":20000},"7":{"us_per_shot":229.1567499982193,"us_per_round":32.73667857117419,"ler":0.0017,"shots":20000},"9":{"us_per_shot":522.3410749982577,"us_per_round":58.03789722202863,"ler":0.00045,"shots":20000}},"belief_matching":{"3":{"us_per_shot":63.85169998975471,"us_per_round":21.283899996584903,"ler":0.006,"shots":2000},"5":{"us_per_shot":1735.3814000380225,"us_per_round":347.0762800076045,"ler":0.002,"shots":2000},"7":{"us_per_shot":11165.551050042268,"us_per_round":1595.0787214346096,"ler":0.0005,"shots":2000},"9":{"us_per_shot":36536.814099992625,"us_per_round":4059.6460111102915,"ler":0.0,"shots":2000}}},"si1000_lambda":{"css pymatching noise=si1000 bias=0.5":[[3,8.205012486369494],[5,8.789048938124795]],"css pymatching_correlated noise=si1000 bias=0.5":[[3,10.000121280687388],[5,10.388181161438236]]},"realtime":{"3":{"commit":3,"buffers":[0,1,2,3,4,5,7],"rates":[0.14335,0.10415,0.1019,0.1009,0.1006,0.1006,0.1006],"lo":[0.13856177160660785,0.09999235343174713,0.09778348952855724,0.0968019743636986,0.09650754444584268,0.09650754444584268,0.09650754444584268],"hi":[0.14827521274543784,0.10845968710030753,0.10616941519750302,0.10515131444858637,0.10484585959230967,0.10484585959230967,0.10484585959230967],"global":0.1006,"latency_us":7.959150010719895},"5":{"commit":5,"buffers":[0,1,2,3,4,5,7],"rates":[0.08725,0.06045,0.0514,0.04825,0.04735,0.0473,0.04715],"lo":[0.08341773100326981,0.0572307226131011,0.048424930575925125,0.04536580978218072,0.044492402389769016,0.04444388826037801,0.04429835130207173],"hi":[0.09124080058598254,0.06383810248697368,0.05454737050448336,0.05130770116983562,0.050381454239849584,0.05032998757355181,0.0501755821447918],"global":0.0471,"latency_us":16.741400002501905},"7":{"commit":7,"buffers":[0,1,2,3,4,5,7],"rates":[0.0514,0.03545,0.0271,0.0227,0.02145,0.0211,0.0208],"lo":[0.048424930575925125,0.032975125808541034,0.024938800819246862,0.020725549230478205,0.019532073566051168,0.019198212055096156,0.018912158330307738],"hi":[0.05454737050448336,0.0381033014471517,0.029442833556422257,0.024857775124579682,0.02355173089678761,0.023185726837921278,0.022871895788577103],"global":0.0208,"latency_us":38.46720000728965}}}/*DATA_END*/;
+</script>
+<script>
+(() => {
+"use strict";
+const NS = "http://www.w3.org/2000/svg";
+const el = (tag, attrs = {}, parent) => {
+  const e = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (parent) parent.appendChild(e);
+  return e;
+};
+const $ = (id) => document.getElementById(id);
+const fmtPct = (x) => (x === 0 ? "0" : x * 100 >= 10 ? (x * 100).toFixed(1).replace(/\.0$/, "") : (x * 100).toPrecision(2)) + "%";
+
+/* ---------------------------------------------------------------- surface code model */
+function buildCode(d) {
+  const data = [], key = new Map();
+  for (let j = 0; j < d; j++) for (let i = 0; i < d; i++) { key.set(`${2*i+1},${2*j+1}`, data.length); data.push({ x: 2*i+1, y: 2*j+1 }); }
+  const checks = [];
+  for (let b = 0; b <= d; b++) for (let a = 0; a <= d; a++) {
+    const basis = (a + b) % 2 === 0 ? "X" : "Z";
+    const qs = [[-1,-1],[1,-1],[-1,1],[1,1]].map(([ox, oy]) => key.get(`${2*a+ox},${2*b+oy}`)).filter((q) => q !== undefined);
+    if (qs.length < 2) continue;
+    if (qs.length === 2) {
+      const tb = b === 0 || b === d;
+      if (tb && basis !== "X") continue;
+      if (!tb && basis !== "Z") continue;
+    }
+    checks.push({ x: 2*a, y: 2*b, basis, qs, side: qs.length === 2 ? (b === 0 ? "top" : b === d ? "bottom" : a === 0 ? "left" : "right") : null });
+  }
+  const zOf = data.map(() => []), xOf = data.map(() => []);
+  checks.forEach((c, k) => c.qs.forEach((q) => (c.basis === "Z" ? zOf : xOf)[q].push(k)));
+  const logicalZ = [...Array(d).keys()].map((i) => key.get(`${2*i+1},1`));
+  const logicalX = [...Array(d).keys()].map((j) => key.get(`1,${2*j+1}`));
+  return { d, data, checks, zOf, xOf, logicalZ, logicalX };
+}
+// error per data qubit: 0 = I, 1 = X, 2 = Z, 3 = Y  (bit 0 = X part, bit 1 = Z part)
+function syndrome(code, err) {
+  return code.checks.map((c) => {
+    let par = 0;
+    for (const q of c.qs) par ^= c.basis === "Z" ? (err[q] & 1) : (err[q] >> 1) & 1;
+    return par;
+  });
+}
+// Exact minimum-weight perfect matching with a boundary, by DP over subsets (small codes only).
+function matchDefects(code, defects, partOf) {
+  const B = -1;
+  const adj = new Map(); // check -> [[neighbourCheck or B, qubit]]
+  partOf.forEach((cs, q) => {
+    if (cs.length === 2) { for (const [u, v] of [[cs[0], cs[1]], [cs[1], cs[0]]]) { if (!adj.has(u)) adj.set(u, []); adj.get(u).push([v, q]); } }
+    else if (cs.length === 1) { if (!adj.has(cs[0])) adj.set(cs[0], []); adj.get(cs[0]).push([B, q]); }
+  });
+  const bfs = (src) => {
+    const dist = new Map([[src, 0]]), prev = new Map(), queue = [src];
+    let bDist = Infinity, bVia = null;
+    while (queue.length) {
+      const u = queue.shift();
+      for (const [v, q] of adj.get(u) || []) {
+        if (v === B) { if (dist.get(u) + 1 < bDist) { bDist = dist.get(u) + 1; bVia = [u, q]; } continue; }
+        if (!dist.has(v)) { dist.set(v, dist.get(u) + 1); prev.set(v, [u, q]); queue.push(v); }
+      }
+    }
+    const pathTo = (t) => { const qs = []; let x = t; while (x !== src) { const [p, q] = prev.get(x); qs.push(q); x = p; } return qs; };
+    const pathB = () => { if (!bVia) return []; return [...pathTo(bVia[0]), bVia[1]]; };
+    return { dist, pathTo, bDist, pathB };
+  };
+  const n = defects.length;
+  if (n === 0) return [];
+  const info = defects.map(bfs);
+  let pairs = [];
+  if (n <= 16) {
+    const full = (1 << n) - 1, memo = new Float64Array(1 << n).fill(-1), choice = new Int32Array(1 << n);
+    const f = (mask) => {
+      if (mask === 0) return 0;
+      if (memo[mask] >= 0) return memo[mask];
+      let i = 0; while (!((mask >> i) & 1)) i++;
+      const rest = mask & ~(1 << i);
+      let best = info[i].bDist + f(rest), ch = -1;
+      for (let j = i + 1; j < n; j++) if ((rest >> j) & 1) {
+        const dij = info[i].dist.get(defects[j]);
+        if (dij === undefined) continue;
+        const c = dij + f(rest & ~(1 << j));
+        if (c < best) { best = c; ch = j; }
+      }
+      memo[mask] = best; choice[mask] = ch; return best;
+    };
+    f(full);
+    let mask = full;
+    while (mask) {
+      let i = 0; while (!((mask >> i) & 1)) i++;
+      const j = choice[mask];
+      pairs.push([i, j]);
+      mask &= ~(1 << i); if (j >= 0) mask &= ~(1 << j);
+    }
+  } else { // greedy fallback for very noisy states
+    const left = new Set(defects.map((_, i) => i));
+    while (left.size) {
+      const i = left.values().next().value; left.delete(i);
+      let best = info[i].bDist, bj = -1;
+      for (const j of left) { const dd = info[i].dist.get(defects[j]); if (dd !== undefined && dd < best) { best = dd; bj = j; } }
+      if (bj >= 0) left.delete(bj);
+      pairs.push([i, bj]);
+    }
+  }
+  const qs = [];
+  for (const [i, j] of pairs) qs.push(...(j < 0 ? info[i].pathB() : info[i].pathTo(defects[j])));
+  return qs;
+}
+function decode(code, err) {
+  const syn = syndrome(code, err);
+  const zDef = [], xDef = [];
+  syn.forEach((s, k) => { if (s) (code.checks[k].basis === "Z" ? zDef : xDef).push(k); });
+  const corrX = matchDefects(code, zDef, code.zOf);  // X errors are seen by Z checks
+  const corrZ = matchDefects(code, xDef, code.xOf);
+  const residual = err.slice();
+  for (const q of corrX) residual[q] ^= 1;
+  for (const q of corrZ) residual[q] ^= 2;
+  let xFail = 0, zFail = 0;
+  for (const q of code.logicalZ) xFail ^= residual[q] & 1;          // X-type residual anticommutes with Z_L
+  for (const q of code.logicalX) zFail ^= (residual[q] >> 1) & 1;   // Z-type residual anticommutes with X_L
+  return { corrX, corrZ, xFail, zFail };
+}
+
+/* ---------------------------------------------------------------- surface code drawing */
+function plaquettePath(c) {
+  const { x, y, side } = c;
+  if (!side) return `M${x-1},${y-1} L${x+1},${y-1} L${x+1},${y+1} L${x-1},${y+1} Z`;
+  if (side === "top") return `M${x-1},${y+1} A1,1 0 0 1 ${x+1},${y+1} Z`;
+  if (side === "bottom") return `M${x+1},${y-1} A1,1 0 0 1 ${x-1},${y-1} Z`;
+  if (side === "left") return `M${x+1},${y+1} A1,1 0 0 1 ${x+1},${y-1} Z`;
+  return `M${x-1},${y-1} A1,1 0 0 1 ${x-1},${y+1} Z`;
+}
+function drawCode(svg, code, err, opts = {}) {
+  svg.replaceChildren();
+  const size = 2 * code.d;
+  svg.setAttribute("viewBox", `-0.6 -0.6 ${size + 1.2} ${size + 1.2}`);
+  const syn = syndrome(code, err);
+  code.checks.forEach((c, k) => el("path", { d: plaquettePath(c), class: `plq ${c.basis}${syn[k] ? " lit" : ""}` }, svg));
+  if (opts.logicals) {
+    const zl = code.logicalZ.map((q) => code.data[q]), xl = code.logicalX.map((q) => code.data[q]);
+    el("line", { x1: zl[0].x - 0.6, y1: zl[0].y, x2: zl.at(-1).x + 0.6, y2: zl.at(-1).y, class: "logical", stroke: "var(--z)" }, svg);
+    el("line", { x1: xl[0].x, y1: xl[0].y - 0.6, x2: xl.at(-1).x, y2: xl.at(-1).y + 0.6, class: "logical", stroke: "var(--x)" }, svg);
+  }
+  const corrX = new Set(opts.corrX || []), corrZ = new Set(opts.corrZ || []);
+  code.data.forEach((q, i) => {
+    const g = el("g", { class: `qubit${err[i] ? " e" + "IXZY"[err[i]] : ""}`, tabindex: opts.interactive ? 0 : -1, role: opts.interactive ? "button" : "img",
+      "aria-label": `data qubit ${i + 1}, error ${"IXZY"[err[i]]}` }, svg);
+    el("circle", { cx: q.x, cy: q.y, r: 0.36 }, g);
+    if (err[i]) el("text", { x: q.x, y: q.y + 0.02 }, g).textContent = "IXZY"[err[i]];
+    if (corrX.has(i)) el("circle", { cx: q.x, cy: q.y, r: 0.55, class: "corr X" }, svg);
+    if (corrZ.has(i)) el("circle", { cx: q.x, cy: q.y, r: 0.68, class: "corr Z" }, svg);
+    if (opts.interactive) {
+      const act = () => opts.onToggle(i);
+      g.addEventListener("click", act);
+      g.addEventListener("keydown", (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); act(); } });
+    }
+  });
+}
+
+// hero: static d=5 example
+(() => {
+  const code = buildCode(5), err = new Array(25).fill(0);
+  err[7] = 1; err[8] = 1; err[16] = 2; err[22] = 3;
+  drawCode($("hero-svg"), code, err);
+})();
+
+// interactive surface code
+(() => {
+  let code, err, result = null, showLog = false;
+  const svg = $("sc-svg"), status = $("sc-status");
+  const setStatus = (html, cls = "") => { status.innerHTML = html; status.className = "status " + cls; };
+  const describe = () => {
+    const nErr = err.filter(Boolean).length, nDet = syndrome(code, err).reduce((a, b) => a + b, 0);
+    setStatus(`<strong>${nErr}</strong> error${nErr === 1 ? "" : "s"} placed, <strong>${nDet}</strong> detection event${nDet === 1 ? "" : "s"}. ` +
+      (nErr && !nDet ? "No checks fired. Is this a stabilizer or a logical operator? Press Decode to find out." : nDet ? "Press Decode to let MWPM pair them up." : "Click qubits to add errors."));
+  };
+  const render = () => drawCode(svg, code, err, { interactive: true, logicals: showLog, corrX: result?.corrX, corrZ: result?.corrZ,
+    onToggle: (i) => { err[i] = (err[i] + 1) % 4; result = null; render(); describe(); } });
+  const reset = () => { code = buildCode(+$("sc-d").value); err = new Array(code.data.length).fill(0); result = null; render(); describe(); };
+  $("sc-d").addEventListener("change", reset);
+  $("sc-p").addEventListener("input", () => { $("sc-pv").textContent = $("sc-p").value + "%"; });
+  $("sc-clear").addEventListener("click", reset);
+  $("sc-logical").addEventListener("click", () => { showLog = !showLog; $("sc-logical").textContent = showLog ? "Hide logical operators" : "Show logical operators"; render(); });
+  $("sc-random").addEventListener("click", () => {
+    const p = +$("sc-p").value / 100;
+    err = err.map(() => (Math.random() < p ? 1 + Math.floor(Math.random() * 3) : 0));
+    result = null; render(); describe();
+  });
+  $("sc-decode").addEventListener("click", () => {
+    result = decode(code, err); render();
+    const n = result.corrX.length + result.corrZ.length;
+    if (result.xFail || result.zFail) {
+      const which = [result.xFail && '<span class="cx">X<sub>L</sub></span>', result.zFail && '<span class="cz">Z<sub>L</sub></span>'].filter(Boolean).join(" and ");
+      setStatus(`<strong>Logical error.</strong> The correction (${n} qubit flip${n === 1 ? "" : "s"}, dashed) plus the real errors form a chain across the patch, so the stored qubit suffered ${which}.`, "bad");
+    } else {
+      setStatus(`<strong>Corrected.</strong> The correction (${n} qubit flip${n === 1 ? "" : "s"}, dashed) plus the real errors leave only closed loops, which are stabilizers and harmless. ${n ? "The correction doesn't have to match the real errors exactly." : ""}`, "ok");
+    }
+  });
+  reset();
+})();
+
+/* ---------------------------------------------------------------- repetition code */
+(() => {
+  const n = 5, bits = new Array(n).fill(0), svg = $("rep-svg");
+  const render = () => {
+    svg.replaceChildren();
+    for (let i = 0; i < n - 1; i++) {
+      const lit = bits[i] !== bits[i + 1];
+      const cx = 1.2 + 2 * i + 1;
+      el("rect", { x: cx - 0.32, y: 1.18, width: 0.64, height: 0.64, rx: 0.08, transform: `rotate(45 ${cx} 1.5)`,
+        fill: lit ? "var(--event)" : "color-mix(in srgb, var(--z) 18%, var(--surface))", stroke: lit ? "var(--event)" : "var(--line)", "stroke-width": 0.05 }, svg);
+      el("text", { x: cx, y: 2.55, "text-anchor": "middle", "font-size": 0.32, fill: "var(--muted)" }, svg).textContent = `check ${i + 1}`;
+    }
+    bits.forEach((b, i) => {
+      const g = el("g", { tabindex: 0, role: "button", "aria-label": `bit ${i + 1} is ${b}`, style: "cursor:pointer" }, svg);
+      el("circle", { cx: 1.2 + 2 * i, cy: 1.5, r: 0.55, fill: b ? "var(--x)" : "var(--surface)", stroke: b ? "var(--x)" : "var(--fg)", "stroke-width": 0.06 }, g);
+      const t = el("text", { x: 1.2 + 2 * i, y: 1.52, "text-anchor": "middle", "dominant-baseline": "central", "font-size": 0.55, "font-family": "var(--font-mono)" }, g);
+      t.textContent = b; if (b) t.setAttribute("fill", "var(--surface)");
+      const act = () => { bits[i] ^= 1; render(); };
+      g.addEventListener("click", act);
+      g.addEventListener("keydown", (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); act(); } });
+    });
+    const flips = bits.reduce((a, b) => a + b, 0);
+    const syn = bits.slice(0, -1).map((b, i) => b ^ bits[i + 1]);
+    // decoder: two explanations fit the syndrome; pick the one with fewer flips
+    const decodedFlips = Math.min(flips, n - flips);
+    const decodedValue = flips > n / 2 ? 1 : 0;
+    const st = $("rep-status");
+    st.className = "status " + (flips === 0 ? "" : decodedValue === 0 ? "ok" : "bad");
+    st.innerHTML = `Syndrome <span class="mono">${syn.join("")}</span>. ` + (flips === 0 ? "All checks pass. Stored value: 0." :
+      decodedValue === 0 ? `The decoder blames ${decodedFlips} flip${decodedFlips === 1 ? "" : "s"} and restores <strong>0</strong>. Correct.` :
+      `${flips} of ${n} bits flipped, so the smallest explanation is the wrong one. The decoder restores <strong>1</strong>: a <strong>logical error</strong>.`);
+  };
+  $("rep-random").addEventListener("click", () => { for (let i = 0; i < n; i++) bits[i] = Math.random() < 0.2 ? 1 : 0; render(); });
+  $("rep-reset").addEventListener("click", () => { bits.fill(0); render(); });
+  render();
+
+  // exact binomial curves
+  const binom = (n, k) => { let r = 1; for (let i = 1; i <= k; i++) r = (r * (n - k + i)) / i; return r; };
+  const fail = (n, p) => { let s = 0; for (let k = Math.floor(n / 2) + 1; k <= n; k++) s += binom(n, k) * p ** k * (1 - p) ** (n - k); return s; };
+  const series = [1, 3, 5, 7, 9].map((m, i) => ({ label: `n=${m}`, color: ["var(--muted)", "var(--s1)", "var(--s2)", "var(--s3)", "var(--s4)"][i],
+    points: Array.from({ length: 60 }, (_, k) => { const p = 0.01 + (0.98 * k) / 59; return [p, Math.max(fail(m, p), 1e-9)]; }) }));
+  lineChart($("rep-chart"), series, { xlog: false, ylog: true, xlabel: "physical error rate p", ylabel: "logical error rate", ymin: 1e-6, ymax: 1, xmin: 0, xmax: 1, markers: false, w: 360, h: 260, vline: 0.5, legend: "br" });
+})();
+
+/* ---------------------------------------------------------------- space-time toy */
+(() => {
+  const checks = 4, rounds = 6, cw = 56, rh = 40, ox = 44, oy = 30;
+  let dataErr = new Set(), measErr = new Set(), mode = "data";
+  const raw = () => {
+    const m = [];
+    for (let r = 0; r < rounds; r++) {
+      m.push([]);
+      for (let c = 0; c < checks; c++) {
+        let v = 0;
+        for (const key of dataErr) { const [q, t] = key.split(",").map(Number); if (t <= r && (q === c || q === c + 1)) v ^= 1; }
+        if (measErr.has(`${c},${r}`)) v ^= 1;
+        m[r].push(v);
+      }
+    }
+    return m;
+  };
+  const grid = (svg, values, clickable) => {
+    svg.replaceChildren();
+    for (let c = 0; c < checks; c++) el("text", { x: ox + c * cw + cw / 2, y: 18, "text-anchor": "middle", "font-size": 12, fill: "var(--muted)" }, svg).textContent = `check ${c + 1}`;
+    for (let r = 0; r < rounds; r++) {
+      el("text", { x: 4, y: oy + r * rh + rh / 2 + 4, "font-size": 12, fill: "var(--muted)" }, svg).textContent = `t=${r}`;
+      for (let c = 0; c < checks; c++) {
+        const v = values[r][c];
+        const g = el("g", {}, svg);
+        el("rect", { x: ox + c * cw + 6, y: oy + r * rh + 4, width: cw - 12, height: rh - 8, rx: 6,
+          fill: v ? (clickable === "raw" ? "color-mix(in srgb, var(--z) 55%, var(--surface))" : "var(--event)") : "var(--bg)", stroke: "var(--line)" }, g);
+        if (clickable === "raw") {
+          el("text", { x: ox + c * cw + cw / 2, y: oy + r * rh + rh / 2 + 5, "text-anchor": "middle", "font-size": 14, "font-family": "var(--font-mono)" }, g).textContent = v;
+          if (measErr.has(`${c},${r}`)) el("rect", { x: ox + c * cw + 3, y: oy + r * rh + 1, width: cw - 6, height: rh - 2, rx: 8, fill: "none", stroke: "var(--x)", "stroke-width": 2, "stroke-dasharray": "4 3" }, g);
+          if (mode === "meas") {
+            g.style.cursor = "pointer"; g.setAttribute("tabindex", 0); g.setAttribute("role", "button");
+            g.setAttribute("aria-label", `make check ${c + 1} at round ${r} report the wrong value`);
+            const act = () => { const k = `${c},${r}`; measErr.has(k) ? measErr.delete(k) : measErr.add(k); render(); };
+            g.addEventListener("click", act); g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); act(); } });
+          }
+        }
+      }
+      if (clickable === "raw" && mode === "data") {
+        for (let q = 0; q <= checks; q++) {
+          const x = ox + q * cw;
+          const g = el("g", { tabindex: 0, role: "button", "aria-label": `flip data bit ${q + 1} at round ${r}`, style: "cursor:pointer" }, svg);
+          const on = dataErr.has(`${q},${r}`);
+          el("rect", { x: x - 9, y: oy + r * rh + 6, width: 18, height: rh - 12, rx: 9, fill: on ? "var(--x)" : "transparent", stroke: on ? "var(--x)" : "var(--muted)", "stroke-dasharray": on ? "" : "2 3" }, g);
+          const act = () => { const k = `${q},${r}`; dataErr.has(k) ? dataErr.delete(k) : dataErr.add(k); render(); };
+          g.addEventListener("click", act); g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); act(); } });
+        }
+      }
+    }
+  };
+  const render = () => {
+    const m = raw();
+    const det = m.map((row, r) => row.map((v, c) => v ^ (r ? m[r - 1][c] : 0)));
+    grid($("st-raw"), m, "raw");
+    grid($("st-det"), det, "det");
+  };
+  const setMode = (m) => {
+    mode = m;
+    $("st-mode-data").className = m === "data" ? "primary" : ""; $("st-mode-data").setAttribute("aria-pressed", m === "data");
+    $("st-mode-meas").className = m === "meas" ? "primary" : ""; $("st-mode-meas").setAttribute("aria-pressed", m === "meas");
+    render();
+  };
+  $("st-mode-data").addEventListener("click", () => setMode("data"));
+  $("st-mode-meas").addEventListener("click", () => setMode("meas"));
+  $("st-reset").addEventListener("click", () => { dataErr = new Set(); measErr = new Set(); render(); });
+  dataErr.add("2,1"); measErr.add("0,3");
+  render();
+})();
+
+/* ---------------------------------------------------------------- charts */
+function lineChart(svg, series, o) {
+  svg.replaceChildren();
+  const vb = svg.viewBox.baseVal;
+  const W = o.w || (vb && vb.width) || 640, H = o.h || (vb && vb.height) || 360, m = { l: 62, r: 16, t: 14, b: 44 };
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  const xs = series.flatMap((s) => s.points.map((p) => p[0])), ys = series.flatMap((s) => s.points.flatMap((p) => [p[1], p[2] ?? p[1], p[3] ?? p[1]])).filter((y) => y > 0);
+  const xmin = o.xmin ?? Math.min(...xs), xmax = o.xmax ?? Math.max(...xs);
+  let ymin = o.ymin ?? Math.min(...ys), ymax = o.ymax ?? Math.max(...ys);
+  if (o.ylog) { ymin = 10 ** Math.floor(Math.log10(ymin)); ymax = 10 ** Math.ceil(Math.log10(ymax)); }
+  const tx = (x) => o.xlog ? Math.log10(x) : x, ty = (y) => o.ylog ? Math.log10(y) : y;
+  const X = (x) => m.l + ((tx(x) - tx(xmin)) / (tx(xmax) - tx(xmin))) * (W - m.l - m.r);
+  const Y = (y) => H - m.b - ((ty(Math.max(y, ymin)) - ty(ymin)) / (ty(ymax) - ty(ymin))) * (H - m.t - m.b);
+  // grid + ticks
+  const yt = [];
+  if (o.yticks) yt.push(...o.yticks);
+  else if (o.ylog) for (let e = Math.log10(ymin); e <= Math.log10(ymax) + 1e-9; e++) yt.push(10 ** e);
+  else for (let k = 0; k <= 4; k++) yt.push(ymin + (k * (ymax - ymin)) / 4);
+  for (const y of yt) {
+    el("line", { x1: m.l, x2: W - m.r, y1: Y(y), y2: Y(y), stroke: "var(--line)", "stroke-width": 1 }, svg);
+    el("text", { x: m.l - 6, y: Y(y) + 4, "text-anchor": "end", "font-size": 11, fill: "var(--muted)" }, svg).textContent = o.ylog ? `1e${Math.round(Math.log10(y))}` : o.ypct ? fmtPct(y) : y.toPrecision(2);
+  }
+  const xt = o.xticks || (o.xlog ? (() => { const t = []; for (let e = Math.floor(Math.log10(xmin)); e <= Math.ceil(Math.log10(xmax)); e++) for (const k of [1, 2, 5]) { const v = k * 10 ** e; if (v >= xmin * 0.999 && v <= xmax * 1.001) t.push(v); } return t; })() : [0, 0.25, 0.5, 0.75, 1].map((f) => xmin + f * (xmax - xmin)));
+  for (const x of xt) {
+    el("line", { x1: X(x), x2: X(x), y1: m.t, y2: H - m.b, stroke: "var(--line)", "stroke-width": 1, opacity: 0.6 }, svg);
+    el("text", { x: X(x), y: H - m.b + 16, "text-anchor": "middle", "font-size": 11, fill: "var(--muted)" }, svg).textContent = o.xfmt ? o.xfmt(x) : o.xpct ? fmtPct(x) : +x.toPrecision(3);
+  }
+  el("text", { x: (m.l + W - m.r) / 2, y: H - 6, "text-anchor": "middle", "font-size": 12, fill: "var(--muted)" }, svg).textContent = o.xlabel || "";
+  el("text", { x: 14, y: (m.t + H - m.b) / 2, "text-anchor": "middle", "font-size": 12, fill: "var(--muted)", transform: `rotate(-90 14 ${(m.t + H - m.b) / 2})` }, svg).textContent = o.ylabel || "";
+  if (o.vline !== undefined) el("line", { x1: X(o.vline), x2: X(o.vline), y1: m.t, y2: H - m.b, stroke: "var(--event)", "stroke-width": 2, "stroke-dasharray": "5 4" }, svg);
+  for (const h of o.hlines || []) {
+    el("line", { x1: m.l, x2: W - m.r, y1: Y(h.y), y2: Y(h.y), stroke: h.color, "stroke-width": 1.5, "stroke-dasharray": "5 4" }, svg);
+  }
+  // series
+  for (const s of series) {
+    const pts = s.points.filter((p) => p[1] > 0);
+    if (pts.length > 1 && pts[0].length > 2) {
+      const up = pts.map((p) => `${X(p[0])},${Y(p[3])}`), dn = pts.slice().reverse().map((p) => `${X(p[0])},${Y(Math.max(p[2], ymin))}`);
+      el("polygon", { points: [...up, ...dn].join(" "), fill: s.color, opacity: 0.13, stroke: "none" }, svg);
+    }
+    el("polyline", { points: pts.map((p) => `${X(p[0])},${Y(p[1])}`).join(" "), fill: "none", stroke: s.color, "stroke-width": 2, "stroke-dasharray": s.dash || "" }, svg);
+    if (o.markers !== false) for (const p of pts) el("circle", { cx: X(p[0]), cy: Y(p[1]), r: 3, fill: s.color }, svg);
+  }
+  // legend: stacked, in a corner chosen per chart ("tl" default, "br", "tr", "bl")
+  const pos = o.legend || "tl", rowH = 15, boxW = 24 + Math.max(...series.map((s) => s.label.length)) * 6.6;
+  const lx0 = pos.includes("r") ? W - m.r - boxW - 6 : m.l + 10;
+  const ly0 = pos.includes("b") ? H - m.b - 8 - rowH * (series.length - 1) : m.t + 12;
+  el("rect", { x: lx0 - 6, y: ly0 - 11, width: boxW + 6, height: rowH * series.length + 6, rx: 4, fill: "var(--surface)", opacity: 0.85 }, svg);
+  series.forEach((s, i) => {
+    const ly = ly0 + i * rowH;
+    el("line", { x1: lx0, x2: lx0 + 16, y1: ly, y2: ly, stroke: s.color, "stroke-width": 2.5, "stroke-dasharray": s.dash || "" }, svg);
+    el("text", { x: lx0 + 22, y: ly + 4, "font-size": 11 }, svg).textContent = s.label;
+  });
+}
+const PALETTE = ["var(--s1)", "var(--s2)", "var(--s3)", "var(--s4)", "var(--muted)"];
+function pending(svg, msg) { svg.replaceChildren(); el("text", { x: 20, y: 40, "font-size": 14, fill: "var(--muted)" }, svg).textContent = msg; }
+
+(() => {
+  const D = DATA;
+  // noise table
+  const th = D?.thresholds || {};
+  const rows = [
+    ["code capacity", "data qubits only; perfect measurements", th.code_capacity, "comparing decoders on paper (the review's tables)"],
+    ["phenomenological", "data qubits + measurement results", th.phenomenological, "a middle ground: needs d rounds"],
+    ["circuit level", "every gate, reset, idle step and measurement", th.circuit, "anything you claim about real hardware"],
+  ];
+  const tps = D?.thresholds_per_shot || {};
+  const keys = ["code_capacity", "phenomenological", "circuit"];
+  $("noise-table").innerHTML = rows.map(([a, b, c, d], i) => {
+    const shot = tps[keys[i]];
+    const cell = !c ? "pending" : shot ? `≈ ${fmtPct(shot)} per shot<br><span class="muted">≈ ${fmtPct(c)} per round</span>` : `≈ ${fmtPct(c)}`;
+    return `<tr><td><strong>${a}</strong></td><td>${b}</td><td class="num">${cell}</td><td>${d}</td></tr>`;
+  }).join("");
+
+  // threshold chart with selector
+  const views = [
+    ["circuit", "Circuit level", "per round"],
+    ["phenomenological", "Phenomenological", "per round"],
+    ["code_capacity", "Code capacity", "per shot"],
+  ];
+  const ctr = $("th-controls");
+  const show = (key) => {
+    [...ctr.children].forEach((b) => { b.className = b.dataset.k === key ? "primary" : ""; b.setAttribute("aria-pressed", b.dataset.k === key); });
+    const curves = D?.curves?.[key];
+    if (!curves) return pending($("th-chart"), "Data pending: run run_experiments.ps1");
+    const series = Object.entries(curves).map(([d, pts], i) => ({ label: `d = ${d}`, color: PALETTE[i % 4], points: pts }));
+    const unit = views.find((v) => v[0] === key)[2];
+    lineChart($("th-chart"), series, { xlog: true, ylog: true, xlabel: "physical error rate p", ylabel: `logical error rate (${unit})`, xpct: true, vline: th[key] });
+    $("th-cap").textContent = `MWPM decoder, rotated CSS surface code, ${unit} error rates. The dashed yellow line marks where these curves cross (${th[key] ? fmtPct(th[key]) : "n/a"}). Shaded bands are 95% confidence intervals.` +
+      (tps[key] ? ` Each shot runs d rounds, so the curves don't cross at the same place in "per shot" units, the convention most papers use: there the crossing is at ${fmtPct(tps[key])}.` : "");
+  };
+  for (const [k, label] of views) {
+    const b = document.createElement("button"); b.textContent = label; b.dataset.k = k; b.addEventListener("click", () => show(k)); ctr.appendChild(b);
+  }
+  show("circuit");
+
+  // decoder table
+  const dec = D?.decoders || {};
+  const decRows = [
+    ["pymatching", "MWPM (PyMatching)", "Pair up detection events with shortest total chain length (Sparse Blossom).", "14.0%", "fast (C++)"],
+    ["pymatching_correlated", "MWPM, correlated", "Match once, then re-weight Z edges that sit next to chosen X edges (Y errors link the two), and match again.", "–", "~2–3× MWPM"],
+    ["union_find", "Union-Find", "Grow clusters around events until each has an even count, then peel a spanning tree. Near-linear time.", "11.6%", "near-linear (ours: Python)"],
+    ["union_find_weighted", "Union-Find, weighted", "Like UF, but clusters grow faster along likely errors.", "–", "near-linear (ours: Python)"],
+    ["bposd", "BP + OSD", "Belief propagation, with ordered-statistics post-processing to break ties. Built for LDPC codes.", "13.9%", "slow, O(n³)"],
+    ["belief_matching", "Belief-matching", "Run BP first, then re-weight the matching graph with its beliefs.", "0.94% (circuit)", "slow"],
+    ["tn", "Tensor network", "Approximate optimal (degenerate) maximum-likelihood decoding.", "18.5%", "very slow; not real-time"],
+    ["nn", "Neural network (ours: MLP)", "Learn syndrome → logical flip from Stim samples. Beats MWPM at d = 3 (1.53% vs 1.75%) but is 3× worse at d = 5 without geometry-aware layers.", "–", "~2–4 µs/shot (numpy)"],
+  ];
+  const sp5 = (k) => D?.speed?.[k]?.["5"];
+  $("dec-table").innerHTML = decRows.map(([k, n, idea, rev, sp]) => `<tr><td><strong>${n}</strong></td><td>${idea}</td><td class="num">${rev}</td>` +
+    `<td class="num">${dec[k] ? fmtPct(dec[k]) : "–"}</td><td>${sp5(k) ? `<span class="mono">${sp5(k).us_per_shot < 100 ? sp5(k).us_per_shot.toFixed(1) : Math.round(sp5(k).us_per_shot)} µs</span>/shot at d=5<br><span class="muted">${sp}</span>` : sp}</td></tr>`).join("");
+
+  // decoder comparison chart
+  const dc = D?.decoder_curves;
+  if (dc) {
+    const names = { pymatching: "MWPM", pymatching_correlated: "MWPM corr.", union_find: "Union-Find", union_find_weighted: "UF weighted", belief_matching: "Belief-matching" };
+    lineChart($("dec-chart"), Object.entries(dc).map(([k, pts], i) => ({ label: names[k] || k, color: PALETTE[i % PALETTE.length], points: pts })),
+      { xlog: true, ylog: true, xlabel: "physical error rate p", ylabel: "logical error rate per round", xpct: true, w: 640, h: 340 });
+  } else pending($("dec-chart"), "Data pending: run run_experiments.ps1");
+
+  // bias sweep
+  const bs = D?.bias_sweep;
+  if (bs) {
+    const toPts = (o) => Object.entries(o).filter(([, v]) => v).map(([k, v]) => [parseFloat(k), v]).sort((a, b) => a[0] - b[0]);
+    lineChart($("bias-chart"), [{ label: "CSS", color: "var(--z)", points: toPts(bs.css) }, { label: "XZZX", color: "var(--x)", points: toPts(bs.xzzx) }],
+      { xlog: true, ylog: false, xlabel: "bias η (0.5 = depolarizing)", ylabel: "threshold", ypct: true, ymin: 0, ymax: 0.5, yticks: [0, 0.1, 0.2, 0.3, 0.4, 0.5], w: 360, h: 280,
+        xticks: [0.5, 1, 3, 10, 30, 100, 1000], xfmt: (x) => x >= 1 ? x.toFixed(0) : x, legend: "tl" });
+    const c = toPts(bs.css), x = toPts(bs.xzzx);
+    $("bias-cap").textContent = `MWPM, code-capacity noise. At η = ${x.at(-1)[0]}: XZZX ≈ ${fmtPct(x.at(-1)[1])} vs CSS ≈ ${fmtPct(c.at(-1)[1])}.`;
+  } else pending($("bias-chart"), "Data pending");
+  const b100 = D?.bias100;
+  if (b100) {
+    const series = [];
+    Object.entries(b100).forEach(([variant, curves]) => Object.entries(curves).forEach(([d, pts]) =>
+      series.push({ label: `${variant.toUpperCase()} d=${d}`, color: variant === "xzzx" ? "var(--x)" : "var(--z)", dash: d === "3" ? "2 3" : d === "5" ? "6 3" : "", points: pts })));
+    lineChart($("bias100-chart"), series.filter((s) => !s.label.endsWith("d=5")), { xlog: true, ylog: true, xlabel: "physical error rate p", ylabel: "logical error / round (Z + X)", xpct: true, w: 360, h: 280, legend: "br" });
+    $("bias100-cap").textContent = D.bias100_note || "";
+  } else pending($("bias100-chart"), "Data pending");
+
+  // realtime
+  const rt = D?.realtime;
+  if (rt) {
+    const series = Object.entries(rt).map(([d, v], i) => ({ label: `d = ${d}`, color: PALETTE[i % 4], points: v.buffers.map((b, k) => [b, v.rates[k], v.lo[k], v.hi[k]]) }));
+    lineChart($("rt-chart"), series, { xlog: false, ylog: true, xlabel: "buffer size (rounds of look-ahead)", ylabel: "logical error rate (30 rounds)", xmin: 0, xmax: Math.max(...series.flatMap((s) => s.points.map((p) => p[0]))), xticks: [0, 1, 2, 3, 4, 5, 7], xfmt: (x) => x.toFixed(0), legend: "tr",
+      hlines: Object.values(rt).map((v, i) => ({ y: v.global, color: PALETTE[i % 4] })) });
+    $("rt-cap").textContent = "Sliding-window MWPM with commit = d rounds, 30-round memory, circuit noise p = 0.4%. Dashed lines show decoding all 30 rounds at once. With no buffer, the error rate is 1.5–2.3× higher; a buffer of about d rounds recovers full accuracy.";
+  } else pending($("rt-chart"), "Data pending");
+})();
+
+/* ---------------------------------------------------------------- glossary */
+(() => {
+  const G = [
+    ["Physical qubit", "A real, noisy qubit on the chip."],
+    ["Logical qubit", "One protected qubit stored across many physical qubits."],
+    ["Data qubit", "A physical qubit that holds part of the encoded state."],
+    ["Measure qubit (ancilla)", "A helper qubit that measures one stabilizer each round. Only these get measured during the computation."],
+    ["Pauli X / Y / Z", "The three basic errors: bit flip, bit+phase flip, phase flip. Any single-qubit error can be broken down into these."],
+    ["Stabilizer (check)", "A product of Paulis, like XXXX, whose value is +1 on every encoded state. Measuring it reveals errors without disturbing the stored data."],
+    ["Syndrome", "The list of all check results. The decoder's input."],
+    ["Detector", "A set of measurements whose parity is fixed when there are no errors. Usually one check compared with itself in the previous round."],
+    ["Detection event", "A detector whose parity came out wrong: the yellow dots."],
+    ["Detector error model (DEM)", "For every possible fault: its probability, which detectors it sets off, and whether it flips the logical qubit. Stim builds it from the circuit, and decoders read it."],
+    ["Decoder", "A classical algorithm that guesses a correction from the detection events."],
+    ["MWPM", "Minimum-weight perfect matching: pair up detection events to minimize total weight, where weight = −log(probability)."],
+    ["Union-Find", "A near-linear-time decoder: grow clusters around detection events, merge them, then peel."],
+    ["Logical operator", "An error chain from one boundary to the opposite one. It sets off no checks but changes the stored qubit."],
+    ["Logical error", "The correction plus the real errors adds up to a logical operator. The decoder failed."],
+    ["Code distance d", "The fewest physical errors that can cause an undetected logical error. A code fixes up to ⌊(d−1)/2⌋ errors."],
+    ["Threshold", "The physical error rate below which bigger codes do better. Depends on code, decoder and noise model."],
+    ["Λ (Lambda)", "How much the logical error rate drops each time d grows by 2. Google reported Λ ≈ 2.1 in 2024."],
+    ["Degeneracy", "Many different errors have the same effect on the encoded qubit, so the decoder only needs the right class of error, not the exact one."],
+    ["Hook error", "One fault on a measure qubit that spreads to two data qubits. A good gate order keeps it from shortening the distance."],
+    ["Code capacity noise", "Noise model with errors only on data qubits and perfect measurements. Gives the highest thresholds."],
+    ["Phenomenological noise", "Data errors plus measurement errors each round, without modelling the gates."],
+    ["Circuit-level noise", "Every gate, reset, idle step and measurement can fail. Closest to real hardware."],
+    ["Bias η", "pZ / (pX + pY). 0.5 is depolarizing; large η means mostly phase flips."],
+    ["XZZX code", "A surface code with a Hadamard on every other data qubit. Each check is XZZX. Excellent under biased noise."],
+    ["CSS code", "A code whose checks are all-X or all-Z, so X and Z errors can be decoded separately. The standard surface code is CSS."],
+    ["Lattice surgery", "Merging and splitting surface-code patches to measure joint logical operators. Used to build logical CNOTs."],
+    ["Magic state", "A special resource state that enables the non-Clifford T gate. Expensive to make."],
+    ["Sliding window", "Decoding a stream of syndrome data a few rounds at a time, committing only the oldest part of each window."],
+    ["Stim", "Fast simulator for stabilizer circuits. Builds circuits, samples shots and builds detector error models."],
+    ["Sinter", "Runs many Stim simulations in parallel and collects the statistics."],
+  ];
+  const dl = $("gloss");
+  const render = (q) => {
+    q = q.trim().toLowerCase();
+    dl.innerHTML = G.filter(([t, d]) => !q || t.toLowerCase().includes(q) || d.toLowerCase().includes(q))
+      .map(([t, d]) => `<dt>${t}</dt><dd>${d}</dd>`).join("") || '<dd class="muted" style="grid-column: 1 / -1">No matching terms.</dd>';
+  };
+  $("gloss-q").addEventListener("input", (e) => render(e.target.value));
+  render("");
+})();
+})();
+</script>

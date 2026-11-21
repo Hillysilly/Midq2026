@@ -1,0 +1,10 @@
+css belief_matching noise=circuit bias=0.5
+  threshold not bracketed by the p range   (d3/d5: no crossing, d5/d7: no crossing)
+css pymatching noise=circuit bias=0.5
+  threshold ~0.013   (d3/d5: 0.01184, d5/d7: 0.01415)
+css pymatching_correlated noise=circuit bias=0.5
+  threshold ~0.01336   (d3/d5: 0.01362, d5/d7: 0.01311)
+css union_find noise=circuit bias=0.5
+  threshold ~0.009603   (d3/d5: 0.01029, d5/d7: 0.008914)
+css union_find_weighted noise=circuit bias=0.5
+  threshold ~0.013   (d3/d5: 0.01489, d5/d7: 0.01112)

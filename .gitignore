@@ -1,0 +1,12 @@
+# environments / caches
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ipynb_checkpoints/
+
+# reference PDFs (third-party; see links in README)
+resources/
+
+# long run logs (local paths, progress output)
+out/*.log

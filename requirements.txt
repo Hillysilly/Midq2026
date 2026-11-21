@@ -1,0 +1,11 @@
+# versions tested on Windows / Python 3.10 (2026-11-20)
+stim==1.16.0
+pymatching==2.4.0
+sinter==1.16.0
+stimbposd==0.2.0        # BP+OSD decoder (optional)
+beliefmatching==0.2.0   # belief-matching decoder (optional)
+ldpc==2.4.1
+numpy==2.2.6
+scipy==1.15.3
+matplotlib==3.10.9
+pytest==9.2.0
