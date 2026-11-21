@@ -21,7 +21,7 @@ metrics, and a benchmark harness that compares them against the standard librari
 [`notebooks/02_decoders_from_scratch.ipynb`](notebooks/02_decoders_from_scratch.ipynb) (watch each decoder work).
 
 **Headline results** (circuit-level noise, same Stim circuits for every decoder):
-* **BP+UF**, our pairing of belief propagation with Union-Find, ties PyMatching's best (correlated) mode at
+* **BP+UF** (belief-find, Higgott et al. 2023; our implementation on our own BP and Union-Find) ties PyMatching's best (correlated) mode at
   d = 7 and makes 1.8× fewer logical errors than standard MWPM. Both stages are parallel.
 * **Union-Find** runs at ~1 µs per round on one CPU thread (PyMatching: 0.34 µs), with 2–6 parallel growth
   rounds from d = 3 to 9, and never loses code distance.

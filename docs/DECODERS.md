@@ -102,7 +102,7 @@ big-int XORs. **Combination sweep (OSD-CS)** then tries flipping each of the nex
 among the next 10, and keeps the lowest-weight valid answer. This lowered d = 5 logical errors by ~25%
 compared with OSD-0.
 
-### BP+UF ("belief-find"), our main novel combination
+### BP+UF ("belief-find", Higgott et al. 2023)
 
 Run BP. If it converges, done. If not, turn each mechanism's posterior into per-edge probabilities
 (an edge flips if an odd number of its mechanisms do), then weights, then Union-Find growth steps, and
@@ -112,7 +112,7 @@ correction.
 
 * Both stages are parallel: BP per message, UF per edge.
 * It's the most accurate of our decoders, beating PyMatching at d = 5 and 7 (see RESULTS §7).
-* It's the same idea as belief-matching (Higgott et al. 2023), but with UF instead of MWPM, so it keeps
+* It was introduced in the same paper as belief-matching (Higgott et al. 2023), with UF in place of MWPM, so it keeps
   UF's hardware-friendliness.
 
 **Caveat we found**: BP-based decoders aren't strictly distance-preserving. When BP oscillates, its
