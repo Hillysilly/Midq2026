@@ -27,7 +27,7 @@ from qec.metrics import (fault_correction_rate, latency, logical_error_rate, par
                          sample)
 
 LABELS = {
-    "union_find": "Union-Find", "union_find_weighted": "UF weighted", "mwpm": "MWPM (ours)",
+    "union_find": "Union-Find", "union_find_weighted": "UF weighted", "mwpm": "MWPM (ours)", "sparse_blossom": "Sparse Blossom (ours)",
     "greedy_matching": "Greedy", "greedy_matching_2opt": "Greedy+2opt", "lookup": "Lookup (d=3)",
     "bp": "BP", "bp_osd": "BP+OSD (ours)", "bp_uf": "BP+UF (ours)",
     "pymatching": "PyMatching", "pymatching_correlated": "PyMatching corr.",
@@ -59,7 +59,7 @@ def main() -> None:
     rows = []
     for name in names:
         dec = make_decoder(name, dem)
-        slow = name in ("mwpm", "greedy_matching", "greedy_matching_2opt", "bposd")
+        slow = name in ("mwpm", "sparse_blossom", "greedy_matching", "greedy_matching_2opt", "bposd")
         shots = min(args.shots, 3000) if slow else args.shots
         r = logical_error_rate(dec, dets[:shots], obs[:shots])
         t = latency(dec, dets[:min(shots, 3000)], single_shots=100)

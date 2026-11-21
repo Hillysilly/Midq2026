@@ -160,24 +160,25 @@ routing and factories):
 
 ## 7. Our own decoders (the challenge entry)
 
-Eight decoders written from scratch (`docs/DECODERS.md`), compared with the library baselines on the
+Nine decoders written from scratch (`docs/DECODERS.md`), compared with the library baselines on the
 same Stim circuits. Reproduce with `run_new_decoders.ps1`, `metrics_report.py` and `pytest`.
 
 ### 7.1 Every metric at one operating point (`out/metrics/report.md`)
 
 | decoder | ours? | logical error / round | 1-fault fail | 2-fault fail | µs / shot | µs / round | parallel depth (mean / max) |
 |---|---|---|---|---|---|---|---|
-| PyMatching corr. | baseline | 4.21e-04 (42/20000) | 0.0% | 0.0% | 4.7 | 0.93 | – |
-| BP+UF (ours) | yes | 5.61e-04 (56/20000) | 0.0% | 0.1% | 394.9 | 78.99 | 13.2 / 42 |
-| BP+OSD (ours) | yes | 6.11e-04 (61/20000) | 0.0% | 0.3% | 763.5 | 152.69 | 57.2 / 150 |
-| PyMatching | baseline | 6.92e-04 (69/20000) | 0.0% | 0.0% | 1.7 | 0.34 | – |
-| MWPM (ours) | yes | 7.35e-04 (11/3000) | 0.0% | 0.0% | 1008.9 | 201.78 | – |
-| UF weighted | yes | 7.82e-04 (78/20000) | 0.0% | 0.0% | 10.1 | 2.03 | 4.2 / 12 |
-| BP+OSD (ldpc) | baseline | 1.00e-03 (15/3000) | 0.1% | 1.3% | 1672.8 | 334.56 | – |
-| Union-Find | yes | 1.10e-03 (110/20000) | 0.0% | 0.0% | 5.6 | 1.12 | 1.5 / 4 |
-| Greedy+2opt | yes | 1.75e-03 (26/3000) | 0.0% | 0.7% | 324.2 | 64.84 | – |
-| Greedy | yes | 3.38e-03 (50/3000) | 0.0% | 2.1% | 302.7 | 60.53 | – |
-| BP | yes | 1.76e-02 (1640/20000) | 3.3% | 8.9% | 336.6 | 67.32 | 12.5 / 30 |
+| PyMatching corr. | baseline | 4.21e-04 (42/20000) | 0.0% | 0.0% | 4.6 | 0.93 | – |
+| BP+UF (ours) | yes | 5.61e-04 (56/20000) | 0.0% | 0.1% | 374.4 | 74.89 | 13.2 / 42 |
+| BP+OSD (ours) | yes | 6.11e-04 (61/20000) | 0.0% | 0.3% | 748.9 | 149.79 | 57.2 / 150 |
+| PyMatching | baseline | 6.92e-04 (69/20000) | 0.0% | 0.0% | 1.8 | 0.36 | – |
+| MWPM (ours) | yes | 7.35e-04 (11/3000) | 0.0% | 0.0% | 1016.4 | 203.27 | – |
+| Sparse Blossom (ours) | yes | 7.35e-04 (11/3000) | 0.0% | 0.0% | 200.1 | 40.02 | – |
+| UF weighted | yes | 7.82e-04 (78/20000) | 0.0% | 0.0% | 8.8 | 1.75 | 4.2 / 12 |
+| BP+OSD (ldpc) | baseline | 1.00e-03 (15/3000) | 0.1% | 1.3% | 1669.9 | 333.98 | – |
+| Union-Find | yes | 1.10e-03 (110/20000) | 0.0% | 0.0% | 4.8 | 0.95 | 1.5 / 4 |
+| Greedy+2opt | yes | 1.75e-03 (26/3000) | 0.0% | 0.7% | 332.3 | 66.45 | – |
+| Greedy | yes | 3.38e-03 (50/3000) | 0.0% | 2.1% | 302.5 | 60.49 | – |
+| BP | yes | 1.76e-02 (1640/20000) | 3.3% | 8.9% | 346.5 | 69.30 | 12.5 / 30 |
 
 Circuit-level noise p = 0.3%, d = 5, 5 rounds, Z memory, **one CPU thread** for every decoder (fair
 against single-threaded PyMatching). Parallel depth = sequential steps if every independent update runs
@@ -190,8 +191,12 @@ so their error bars are wide (see the counts in brackets).
   It's ~600× slower: the price of an explicit syndrome graph plus networkx's pure-Python blossom.
 * **Our BP+OSD beats the ldpc library's** (`bposd`, OSD-0, 20 iterations): 6.1e-4 vs 1.0e-3 per round and 2×
   faster, thanks to the combination sweep. (The library number has only 15 errors, so ±50%.)
-* **Union-Find on one thread: 5.6 µs per shot**, 3.3× PyMatching's C++. That's ~1 µs per round, which
-  keeps up with a superconducting chip.
+* **Union-Find on one thread: 4.8 µs per shot**, 2.7× PyMatching's C++ (after fixing a wrapper slowdown; see
+  `results/2026-11-21_1559_p1e-3_distance_sweep.md`). That's ~1 µs per round, which keeps up with a
+  superconducting chip.
+* **Sparse Blossom (ours)** makes the same predictions as our MWPM on every shot here, 5× faster, because it never
+  builds the complete graph between lit detectors. It's PyMatching's algorithm in pure Python, ~110× slower than
+  PyMatching's C++.
 
 ### 7.2 Logical error rate vs p, d = 3, 5, 7 (`out/ours_circuit`)
 

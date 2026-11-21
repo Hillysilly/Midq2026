@@ -9,6 +9,7 @@ Measured numbers are in [`RESULTS.md`](../RESULTS.md) §7. `pytest` recomputes t
 | Union-Find | `union_find.py` | grow clusters around defects until each is even, then peel a spanning tree | ~O(n α(n)) | all edges grow at once each round; few rounds |
 | UF weighted | `union_find.py` | same, but likely edges grow faster | same | same, a few more rounds |
 | MWPM | `matching.py` | shortest paths + exact minimum-weight perfect matching (blossom) | O(k³) for k defects | hard to parallelise (blossom is sequential) |
+| Sparse Blossom | `sparse_blossom.py` | the same exact matching, grown directly on the detector graph (PyMatching's algorithm) | ~linear in practice | sequential events |
 | Greedy (+2-opt) | `matching.py` | pair the defects that save the most, then fix with local swaps | O(k² log k) | swaps on disjoint pairs run in parallel |
 | Lookup table | `lookup.py` | precompute the most likely correction for every likely syndrome | O(1) | one memory read |
 | BP | `bp.py` | pass probability messages between detectors and error mechanisms | O(iters · nnz) | every message updates at once |
@@ -62,6 +63,37 @@ Rounds depend on the *size of the biggest error cluster*, not the code size.
 
 It agrees with PyMatching on **100%** of shots (tested), and is ~500× slower, which is why PyMatching's
 Sparse Blossom (no explicit syndrome graph) matters.
+
+## Sparse Blossom (Higgott & Gidney 2023; the algorithm inside PyMatching 2)
+
+The same exact MWPM, without ever computing all-pairs distances. Our implementation is
+`qec/sparse_blossom.py` (pure Python, ~450 lines).
+
+1. Every lit detector starts a **region** of radius 0. The radii are Edmonds' dual variables.
+2. Growing regions spread along the detector graph's edges at unit speed (integer edge weights, so every
+   event happens at an exact time). A priority queue holds the next event on every edge:
+   - a region **reaches an empty node**: the node joins it;
+   - **two regions touch**: a matching step;
+   - a region **reaches the boundary**: it matches to the boundary.
+3. Matching steps are Edmonds' blossom algorithm on regions:
+   - two growing regions from different alternating trees touch: **augment** (match them, flip both tree paths);
+   - a growing region touches a matched pair: **grow the tree** (the touched region becomes inner and
+     shrinks, its partner becomes outer and grows);
+   - two growing regions of the same tree touch: an odd cycle, so **form a blossom** that grows as one region;
+   - an inner blossom shrinks to radius 0: **shatter** it back into its children;
+   - an inner single-detector region shrinks to radius 0: its two tree neighbours now touch through it,
+     which forms a blossom.
+4. When nothing grows, every region is matched. Blossoms are expanded into detector pairs, and each pair's
+   correction is a shortest path from a small local Dijkstra search.
+
+It finds a matching of exactly PyMatching's weight on every shot we compared (thousands, up to d = 9, including
+1.2% noise where blossoms form and shatter constantly; `tests/test_new_decoders.py`). It is 3–6× faster than our
+textbook MWPM, and the gap grows with d. It is ~130× slower than PyMatching at d = 7: that's pure Python vs
+tuned C++ running the same algorithm.
+
+How it relates to Union-Find: both grow regions around lit detectors. Union-Find stops as soon as every
+cluster has even parity and guesses a correction inside each cluster; Sparse Blossom keeps exact radii and
+runs Edmonds' steps when regions touch, which is what makes its answer optimal.
 
 **Greedy matching** replaces step 3 with "start with everyone at the boundary, then take pairings in
 order of how much they save". It is fast and simple but **not distance-preserving**: it grabs one

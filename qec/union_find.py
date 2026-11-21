@@ -33,7 +33,133 @@ except ImportError:  # pragma: no cover
     _nb = None
 
 
-def _uf_kernel_py(dets, caps, eu, ev, eobs, adj_ptr, adj_edge, adj_nbr, B):
+def _uf_one(dets, s, cap, eu, ev, eobs, adj_ptr, adj_edge, adj_nbr, B,
+            parent, size, parity, has_b, reached, support, root, newly, visited, tree_e, tree_p, order, defect):
+    """Decode shot `s` using caller-provided scratch arrays. Returns (observable bitmask, growth rounds)."""
+    N = B + 1
+    M = eu.size
+    n_def = 0
+    for x in range(N):
+        parent[x] = x
+        size[x] = 1
+        parity[x] = False
+        has_b[x] = False
+        reached[x] = False
+        visited[x] = False
+        tree_e[x] = -1
+        tree_p[x] = -1
+        defect[x] = False
+    has_b[B] = True
+    for x in range(B):
+        if dets[s, x]:
+            parity[x] = True
+            reached[x] = True
+            defect[x] = True
+            n_def += 1
+    if n_def == 0:
+        return 0, 0
+    for e in range(M):
+        support[e] = 0
+    rounds = 0
+    while True:
+        # roots and activity, frozen for this round
+        for x in range(N):
+            r = x
+            while parent[r] != r:
+                r = parent[r]
+            root[x] = r
+        any_active = False
+        for x in range(N):
+            if reached[x] and root[x] == x and parity[x] and not has_b[x]:
+                any_active = True
+                break
+        if not any_active:
+            break
+        rounds += 1
+        n_new = 0
+        progressed = False
+        for e in range(M):  # every edge independently
+            if support[e] >= cap[e]:
+                continue
+            u = eu[e]
+            v = ev[e]
+            inc = 0
+            ru = -1
+            if reached[u]:
+                ru = root[u]
+                if parity[ru] and not has_b[ru]:
+                    inc += 1
+            if reached[v]:
+                rv = root[v]
+                if rv != ru and parity[rv] and not has_b[rv]:
+                    inc += 1
+            if inc > 0:
+                progressed = True
+                support[e] = min(cap[e], support[e] + inc)
+                if support[e] == cap[e]:
+                    newly[n_new] = e
+                    n_new += 1
+        if not progressed:
+            break
+        for i in range(n_new):  # merge clusters joined by fully grown edges
+            e = newly[i]
+            u = eu[e]
+            v = ev[e]
+            reached[u] = True
+            reached[v] = True
+            ru = u
+            while parent[ru] != ru:
+                ru = parent[ru]
+            rv = v
+            while parent[rv] != rv:
+                rv = parent[rv]
+            if ru == rv:
+                continue
+            if size[ru] < size[rv]:
+                tmp = ru
+                ru = rv
+                rv = tmp
+            parent[rv] = ru
+            size[ru] += size[rv]
+            parity[ru] ^= parity[rv]
+            has_b[ru] |= has_b[rv]
+
+
+    # peel: BFS forest over grown edges (boundary component first), then leaves inwards
+    n_ord = 0
+    for start_i in range(N + 1):
+        start = B if start_i == 0 else start_i - 1
+        if not reached[start] or visited[start]:
+            continue
+        visited[start] = True
+        order[n_ord] = start
+        head = n_ord
+        n_ord += 1
+        while head < n_ord:
+            x = order[head]
+            head += 1
+            for k in range(adj_ptr[x], adj_ptr[x + 1]):
+                e = adj_edge[k]
+                y = adj_nbr[k]
+                if support[e] >= cap[e] and not visited[y]:
+                    visited[y] = True
+                    tree_e[y] = e
+                    tree_p[y] = x
+                    order[n_ord] = y
+                    n_ord += 1
+    for x in range(B):
+        defect[x] = dets[s, x]
+    pred = 0
+    for i in range(n_ord - 1, -1, -1):
+        x = order[i]
+        if tree_e[x] >= 0 and defect[x]:
+            pred ^= eobs[tree_e[x]]
+            defect[x] = False
+            defect[tree_p[x]] ^= True
+    return pred, rounds
+
+
+def _uf_kernel_py(dets, caps, per_shot, eu, ev, eobs, adj_ptr, adj_edge, adj_nbr, B):
     """Union-Find over a batch of shots, written in the *synchronous, edge-parallel* form.
 
     Each growth round, every edge looks at the clusters at its two ends (as they were at the start
@@ -49,132 +175,38 @@ def _uf_kernel_py(dets, caps, eu, ev, eobs, adj_ptr, adj_edge, adj_nbr, B):
     M = eu.size
     out = np.zeros(S, dtype=np.int64)
     rounds_out = np.zeros(S, dtype=np.int64)
-    for s in _prange(S):
-        cap = caps[s]
-        parent = np.arange(N)
-        size = np.ones(N, dtype=np.int64)
-        parity = np.zeros(N, dtype=np.bool_)
-        has_b = np.zeros(N, dtype=np.bool_)
-        reached = np.zeros(N, dtype=np.bool_)
-        has_b[B] = True
-        n_def = 0
-        for x in range(B):
-            if dets[s, x]:
-                parity[x] = True
-                reached[x] = True
-                n_def += 1
-        if n_def == 0:
-            continue
-        support = np.zeros(M, dtype=np.int64)
+    block = 256
+    n_blocks = (S + block - 1) // block
+    for blk in _prange(n_blocks):
+        # scratch arrays: allocated once per block of shots (not once per shot), reset inside _uf_one
+        parent = np.empty(N, dtype=np.int64)
+        size = np.empty(N, dtype=np.int64)
+        parity = np.empty(N, dtype=np.bool_)
+        has_b = np.empty(N, dtype=np.bool_)
+        reached = np.empty(N, dtype=np.bool_)
+        support = np.empty(M, dtype=np.int64)
         root = np.empty(N, dtype=np.int64)
         newly = np.empty(M, dtype=np.int64)
-        rounds = 0
-        while True:
-            # roots and activity, frozen for this round
-            for x in range(N):
-                r = x
-                while parent[r] != r:
-                    r = parent[r]
-                root[x] = r
-            any_active = False
-            for x in range(N):
-                if reached[x] and root[x] == x and parity[x] and not has_b[x]:
-                    any_active = True
-                    break
-            if not any_active:
-                break
-            rounds += 1
-            n_new = 0
-            progressed = False
-            for e in range(M):  # every edge independently
-                if support[e] >= cap[e]:
-                    continue
-                u = eu[e]
-                v = ev[e]
-                inc = 0
-                ru = -1
-                if reached[u]:
-                    ru = root[u]
-                    if parity[ru] and not has_b[ru]:
-                        inc += 1
-                if reached[v]:
-                    rv = root[v]
-                    if rv != ru and parity[rv] and not has_b[rv]:
-                        inc += 1
-                if inc > 0:
-                    progressed = True
-                    support[e] = min(cap[e], support[e] + inc)
-                    if support[e] == cap[e]:
-                        newly[n_new] = e
-                        n_new += 1
-            if not progressed:
-                break
-            for i in range(n_new):  # merge clusters joined by fully grown edges
-                e = newly[i]
-                u = eu[e]
-                v = ev[e]
-                reached[u] = True
-                reached[v] = True
-                ru = u
-                while parent[ru] != ru:
-                    ru = parent[ru]
-                rv = v
-                while parent[rv] != rv:
-                    rv = parent[rv]
-                if ru == rv:
-                    continue
-                if size[ru] < size[rv]:
-                    tmp = ru
-                    ru = rv
-                    rv = tmp
-                parent[rv] = ru
-                size[ru] += size[rv]
-                parity[ru] ^= parity[rv]
-                has_b[ru] |= has_b[rv]
-        rounds_out[s] = rounds
-
-        # peel: BFS forest over grown edges (boundary component first), then leaves inwards
-        visited = np.zeros(N, dtype=np.bool_)
-        tree_e = np.full(N, -1, dtype=np.int64)
-        tree_p = np.full(N, -1, dtype=np.int64)
+        visited = np.empty(N, dtype=np.bool_)
+        tree_e = np.empty(N, dtype=np.int64)
+        tree_p = np.empty(N, dtype=np.int64)
         order = np.empty(N, dtype=np.int64)
-        n_ord = 0
-        for start_i in range(N + 1):
-            start = B if start_i == 0 else start_i - 1
-            if not reached[start] or visited[start]:
-                continue
-            visited[start] = True
-            order[n_ord] = start
-            head = n_ord
-            n_ord += 1
-            while head < n_ord:
-                x = order[head]
-                head += 1
-                for k in range(adj_ptr[x], adj_ptr[x + 1]):
-                    e = adj_edge[k]
-                    y = adj_nbr[k]
-                    if support[e] >= cap[e] and not visited[y]:
-                        visited[y] = True
-                        tree_e[y] = e
-                        tree_p[y] = x
-                        order[n_ord] = y
-                        n_ord += 1
-        defect = np.zeros(N, dtype=np.bool_)
-        for x in range(B):
-            defect[x] = dets[s, x]
-        pred = 0
-        for i in range(n_ord - 1, -1, -1):
-            x = order[i]
-            if tree_e[x] >= 0 and defect[x]:
-                pred ^= eobs[tree_e[x]]
-                defect[x] = False
-                defect[tree_p[x]] ^= True
-        out[s] = pred
+        defect = np.empty(N, dtype=np.bool_)
+        s0 = np.int64(blk) * block
+        s1 = min(S, s0 + block)
+        for s in range(s0, s1):
+            row = s if per_shot else 0
+            pred, rounds = _uf_one(dets, s, caps[row], eu, ev, eobs, adj_ptr, adj_edge, adj_nbr, B,
+                                   parent, size, parity, has_b, reached, support, root, newly,
+                                   visited, tree_e, tree_p, order, defect)
+            out[s] = pred
+            rounds_out[s] = rounds
     return out, rounds_out
 
 
 if _nb is not None:
     _prange = _nb.prange
+    _uf_one = _nb.njit(cache=True)(_uf_one)
     _uf_kernel = _nb.njit(parallel=True, cache=True)(_uf_kernel_py)
 else:  # pragma: no cover
     _prange = range
@@ -347,8 +379,12 @@ class UnionFindDecoder:
                 rounds.append(self.last_growth_rounds)
             self.last_batch_rounds = np.array(rounds, dtype=np.int64)
             return obs_mask_to_bits(np.array(masks, dtype=np.int64), self.num_observables)
-        caps = np.ascontiguousarray(np.broadcast_to(caps, (len(dets), caps.shape[1])))
-        masks, rounds = _uf_kernel(dets, caps, self._eu, self._ev, self._eobs,
+        # One row of caps for every shot unless per-shot caps were given (BP+UF). Copying the row
+        # once per shot cost ~2 us/shot and 3 GB of memory at d = 7 before this was fixed.
+        per_shot = caps.shape[0] > 1
+        if per_shot and caps.shape[0] != len(dets):
+            raise ValueError("edge_caps must have one row, or one row per shot")
+        masks, rounds = _uf_kernel(dets, np.ascontiguousarray(caps), per_shot, self._eu, self._ev, self._eobs,
                                    self._adj_ptr, self._adj_edge, self._adj_nbr, self.boundary)
         self.last_batch_rounds = rounds
         return obs_mask_to_bits(masks, self.num_observables)

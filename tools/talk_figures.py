@@ -25,7 +25,7 @@ PAPER, INK, SOFT, GRID = "#F7F5EF", "#14213D", "#4A5568", "#DDD8CC"
 OURS, BASE, BLUE = "#C8661A", "#14213D", "#5B8FC9"
 LABEL = {"pymatching": "PyMatching", "pymatching_correlated": "PyMatching correlated",
          "bp_uf": "BP+UF (ours)", "bp_osd": "BP+OSD (ours)", "union_find_weighted": "UF weighted (ours)",
-         "union_find": "Union-Find (ours)", "mwpm": "MWPM (ours)", "greedy_matching": "Greedy (ours)",
+         "union_find": "Union-Find (ours)", "mwpm": "MWPM (ours)", "sparse_blossom": "Sparse Blossom (ours)", "greedy_matching": "Greedy (ours)",
          "greedy_matching_2opt": "Greedy+2-opt (ours)", "bposd": "BP+OSD (ldpc library)", "bp": "BP alone (ours)"}
 OUT = ROOT / "out" / "talk"
 
