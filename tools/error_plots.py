@@ -1,4 +1,5 @@
 """Logical-error-rate plots with 95% Wilson error bars, from the Sinter stats in out/.
+(Written by Claude 2, 2026-11-21.)
 
     python tools/error_plots.py                      # all plots -> out/error_plots/
     python tools/error_plots.py --verify out/verify  # also overlay a fresh run on the stored data
