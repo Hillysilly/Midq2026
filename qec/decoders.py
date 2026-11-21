@@ -12,6 +12,7 @@
 | union_find           | Union-Find, unweighted §5.2 (numba, edge-parallel growth)    | union_find.py |
 | union_find_weighted  | Union-Find with weighted growth                              | union_find.py |
 | mwpm                 | MWPM: Dijkstra + boundary copies + blossom (networkx) §5.1   | matching.py |
+| sparse_blossom       | Exact MWPM grown on the detector graph (PyMatching's algorithm) | sparse_blossom.py |
 | greedy_matching      | Greedy matching by savings                                   | matching.py |
 | greedy_matching_2opt | Greedy matching + 2-opt local search                         | matching.py |
 | lookup               | Lookup table, most-likely error up to weight 2 (small codes) | lookup.py |
@@ -40,6 +41,7 @@ import stim
 from .bp import BPDecoder, BPOSDDecoder, BPUnionFindDecoder
 from .lookup import LookupTableDecoder
 from .matching import GreedyMatchingDecoder, MWPMDecoder
+from .sparse_blossom import SparseBlossomDecoder
 from .union_find import UnionFindDecoder, UnionFindSinterDecoder
 
 
@@ -96,6 +98,7 @@ _FACTORIES: dict[str, Callable[[stim.DetectorErrorModel], object]] = {
     "union_find": lambda dem: UnionFindDecoder(dem),
     "union_find_weighted": lambda dem: UnionFindDecoder(dem, weighted=True),
     "mwpm": MWPMDecoder,
+    "sparse_blossom": SparseBlossomDecoder,
     "greedy_matching": GreedyMatchingDecoder,
     "greedy_matching_2opt": lambda dem: GreedyMatchingDecoder(dem, local_search=True),
     "lookup": LookupTableDecoder,
@@ -107,7 +110,7 @@ _FACTORIES: dict[str, Callable[[stim.DetectorErrorModel], object]] = {
 }
 
 DECODER_NAMES = list(_FACTORIES)
-OURS = ["union_find", "union_find_weighted", "mwpm", "greedy_matching", "greedy_matching_2opt",
+OURS = ["union_find", "union_find_weighted", "mwpm", "sparse_blossom", "greedy_matching", "greedy_matching_2opt",
         "lookup", "bp", "bp_osd", "bp_uf"]
 BASELINES = ["pymatching", "pymatching_correlated", "bposd", "belief_matching"]
 

@@ -18,7 +18,7 @@ from qec.metrics import (Rate, fault_correction_rate, keeps_up, lambda_factor, l
                          logical_error_rate, min_failing_weight, parallel_depth, sample, threshold)
 
 # Our decoders, minus the ones that are deliberately weak (bp alone, greedy) where noted.
-DISTANCE_PRESERVING = ["union_find", "union_find_weighted", "mwpm", "bp_osd", "bp_uf"]
+DISTANCE_PRESERVING = ["union_find", "union_find_weighted", "mwpm", "sparse_blossom", "bp_osd", "bp_uf"]
 ALL_OURS = DISTANCE_PRESERVING + ["greedy_matching", "greedy_matching_2opt", "bp", "lookup"]
 
 P_CIRCUIT = 2e-3
@@ -90,7 +90,7 @@ def test_fault_weight_correction_d5(name, metrics_log):
         assert w2.errors == 0
 
 
-@pytest.mark.parametrize("name", ["union_find_weighted", "mwpm", "greedy_matching"])
+@pytest.mark.parametrize("name", ["union_find_weighted", "mwpm", "sparse_blossom", "greedy_matching"])
 def test_min_failing_weight(name, metrics_log):
     c, dem = _circuit(5, 1e-3)
     w = min_failing_weight(make_decoder(name, dem), dem, max_weight=3, samples_per_weight=1500)
@@ -106,6 +106,7 @@ def test_min_failing_weight(name, metrics_log):
     ("union_find", 0.09, 0.17),
     ("union_find_weighted", 0.09, 0.17),
     ("mwpm", 0.11, 0.17),
+    ("sparse_blossom", 0.11, 0.17),
     ("bp_osd", 0.11, 0.20),
     ("bp_uf", 0.11, 0.20),
 ])
@@ -118,7 +119,7 @@ def test_code_capacity_threshold(name, lo, hi, metrics_log):
         for p in ps:
             c = code.memory_circuit_ideal(NoiseModel.code_capacity(p))
             dem = detector_error_model(c)
-            dets, obs = sample(c, 1500 if name == "mwpm" else 3000, seed=int(p * 1000) + d)
+            dets, obs = sample(c, 1500 if name in ("mwpm", "sparse_blossom") else 3000, seed=int(p * 1000) + d)
             rates[d][p] = logical_error_rate(make_decoder(name, dem), dets, obs).rate
     th = threshold(rates)
     metrics_log(metric="code-capacity threshold (d3/d5 crossing)", decoder=name,
@@ -134,7 +135,7 @@ def test_code_capacity_threshold(name, lo, hi, metrics_log):
 def test_latency(name, metrics_log):
     d = 3 if name == "lookup" else 5
     c, dem = _circuit(d, 1e-3)
-    dets, _ = sample(c, 2000 if name != "mwpm" else 300, seed=7)
+    dets, _ = sample(c, 300 if name in ("mwpm", "sparse_blossom") else 2000, seed=7)
     t = latency(make_decoder(name, dem), dets, single_shots=100)
     metrics_log(metric="decode time (circuit p=0.1%, d rounds)", decoder=name, d=d,
                 batch_us_per_shot=t.batch_us_per_shot, us_per_round=t.batch_us_per_shot / d,

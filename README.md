@@ -1,6 +1,6 @@
 # midq2026: surface-code decoders, built from scratch
 
-Our entry for the **Northrop Grumman decoder-implementation challenge**. We implemented **eight
+Our entry for the **Northrop Grumman decoder-implementation challenge**. We implemented **nine
 decoding algorithms ourselves** (no decoding library inside), test functions that compute decoder
 metrics, and a benchmark harness that compares them against the standard libraries on
 [Stim](https://github.com/quantumlib/Stim)-generated syndromes. We follow the decoder review
@@ -10,6 +10,7 @@ metrics, and a benchmark harness that compares them against the standard librari
 |---|---|---|
 | Union-Find (plain, weighted) | `qec/union_find.py` | grow clusters, merge, peel; compiled edge-parallel kernel |
 | MWPM | `qec/matching.py` | Dijkstra + boundary copies + blossom; matches PyMatching on 100% of shots |
+| Sparse Blossom | `qec/sparse_blossom.py` | PyMatching's algorithm, from scratch: exact MWPM grown on the detector graph |
 | Greedy matching (+2-opt) | `qec/matching.py` | fast pairing by savings; shows why exact matching matters |
 | Lookup table | `qec/lookup.py` | most-likely correction per syndrome, up to 2 faults (d = 3) |
 | Belief propagation | `qec/bp.py` | min-sum on the Tanner graph; numba and whole-array numpy versions |
@@ -27,6 +28,9 @@ metrics, and a benchmark harness that compares them against the standard librari
   rounds from d = 3 to 9, and never loses code distance.
 * Our **BP+OSD** beats the ldpc library's BP+OSD (6.1e-4 vs 1.0e-3 per round at d = 5, 2× faster).
 * Our **MWPM** makes identical predictions to PyMatching on every shot tested.
+* Our **Sparse Blossom** (PyMatching's own algorithm, written from scratch in Python) finds matchings of exactly
+  PyMatching's weight on every shot we compared, 3–6× faster than our textbook MWPM.
+* With 12 threads our **Union-Find** matches single-call PyMatching's throughput at d = 7 and beats it at d = 3 and 5.
 * **Distance-preserving ≠ most accurate:** the BP hybrids miss 0.1–0.3% of two-fault errors at d = 5;
   greedy matching misses 2%, so bigger codes don't help it.
 

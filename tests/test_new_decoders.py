@@ -45,7 +45,7 @@ def test_our_mwpm_equals_pymatching(setup):
     assert (ours == theirs).all(axis=1).mean() >= 0.995
 
 
-@pytest.mark.parametrize("name", ["union_find", "union_find_weighted", "mwpm", "greedy_matching",
+@pytest.mark.parametrize("name", ["union_find", "union_find_weighted", "mwpm", "sparse_blossom", "greedy_matching",
                                   "greedy_matching_2opt", "bp_osd", "bp_uf", "lookup"])
 def test_single_faults_corrected(setup, name):
     d, c, dem, g = setup
@@ -87,3 +87,35 @@ def test_bp_uf_uses_bp_when_converged():
     dets, obs = sample(c, 500, seed=2)
     dec.decode_batch(dets)
     assert dec.last.converged.mean() > 0.9  # at low p, BP alone usually finds a valid answer
+
+
+def test_sparse_blossom_matches_pymatching_weight(setup):
+    """Sparse Blossom is exact MWPM: its total matching weight must equal PyMatching's on every shot
+    (up to the 1/4096 weight rounding both implementations use)."""
+    from qec.sparse_blossom import SparseBlossomDecoder
+
+    d, c, dem, g = setup
+    dets, _ = sample(c, 300 if d == 5 else 800, seed=21)
+    sb = SparseBlossomDecoder(g)
+    m = pymatching.Matching.from_detector_error_model(dem)
+    for row in dets:
+        _, w_pm = m.decode(row, return_weight=True)
+        assert abs(sb.matching_weight(row) - w_pm) <= 2e-3 * max(w_pm, 1e-9)
+
+
+def test_sparse_blossom_handles_blossoms():
+    """High noise forces blossom formation, shattering and zero-radius events; weights must still match."""
+    from qec.sparse_blossom import SparseBlossomDecoder
+
+    c = memory_circuit(7, 1.2e-2)
+    dem = detector_error_model(c)
+    sb = SparseBlossomDecoder(dem)
+    m = pymatching.Matching.from_detector_error_model(dem)
+    dets, _ = sample(c, 150, seed=5)
+    seen = {"blossom": 0, "shatter": 0, "zero_radius": 0}
+    for row in dets:
+        _, w_pm = m.decode(row, return_weight=True)
+        assert abs(sb.matching_weight(row) - w_pm) <= 2e-3 * max(w_pm, 1e-9)
+        for k in seen:
+            seen[k] += sb.last_stats[k]
+    assert seen["blossom"] > 0 and seen["zero_radius"] > 0
