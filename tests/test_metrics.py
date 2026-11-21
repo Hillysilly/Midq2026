@@ -18,7 +18,7 @@ from qec.metrics import (Rate, fault_correction_rate, keeps_up, lambda_factor, l
                          logical_error_rate, min_failing_weight, parallel_depth, sample, threshold)
 
 # Our decoders, minus the ones that are deliberately weak (bp alone, greedy) where noted.
-DISTANCE_PRESERVING = ["union_find", "union_find_weighted", "mwpm", "sparse_blossom", "bp_osd", "bp_uf"]
+DISTANCE_PRESERVING = ["union_find", "union_find_weighted", "mwpm", "sparse_blossom", "bp_osd", "bp_uf", "bp_uf_local"]
 ALL_OURS = DISTANCE_PRESERVING + ["greedy_matching", "greedy_matching_2opt", "bp", "lookup"]
 
 P_CIRCUIT = 2e-3
@@ -109,6 +109,7 @@ def test_min_failing_weight(name, metrics_log):
     ("sparse_blossom", 0.11, 0.17),
     ("bp_osd", 0.11, 0.20),
     ("bp_uf", 0.11, 0.20),
+    ("bp_uf_local", 0.11, 0.20),
 ])
 def test_code_capacity_threshold(name, lo, hi, metrics_log):
     ps = [0.06, 0.09, 0.12, 0.15, 0.18, 0.21]
@@ -147,7 +148,7 @@ def test_latency(name, metrics_log):
 # 5. parallelism
 # --------------------------------------------------------------------------------------------- #
 
-@pytest.mark.parametrize("name", ["union_find", "union_find_weighted", "bp", "bp_uf"])
+@pytest.mark.parametrize("name", ["union_find", "union_find_weighted", "bp", "bp_uf", "bp_uf_local"])
 def test_parallel_depth_scaling(name, metrics_log):
     """Sequential steps per shot if every independent update runs simultaneously. For the
     decoders to be useful in hardware, this must grow much slower than the code size (~d^3)."""
@@ -160,7 +161,7 @@ def test_parallel_depth_scaling(name, metrics_log):
     if name.startswith("bp"):
         # BP converges less often on bigger codes, so its *mean* depth grows, but the worst case
         # is fixed by max_iter (30): constant-time in hardware, at the cost of accuracy.
-        assert depth[7]["max"] <= 30 + (2 * 7 * 7 if name == "bp_uf" else 0)
+        assert depth[7]["max"] <= 30 + (2 * 7 * 7 if name.startswith("bp_uf") else 0)
     else:
         growth = depth[7]["mean"] / max(depth[3]["mean"], 1e-9)
         volume_growth = 7 ** 3 / 3 ** 3  # detectors grow like d^3

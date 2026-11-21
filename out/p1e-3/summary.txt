@@ -4,6 +4,8 @@ css bp_osd noise=circuit bias=0.5
   threshold not bracketed by the p range   (d3/d5: no crossing, d5/d7: no crossing, d7/d9: no crossing)
 css bp_uf noise=circuit bias=0.5
   threshold not bracketed by the p range   (d3/d5: no crossing, d5/d7: no crossing, d7/d9: no crossing)
+css bp_uf_local noise=circuit bias=0.5
+  threshold not bracketed by the p range   (d3/d5: no crossing, d5/d7: no crossing, d7/d9: no crossing)
 css greedy_matching noise=circuit bias=0.5
   threshold not bracketed by the p range   (d3/d5: no crossing)
 css greedy_matching_2opt noise=circuit bias=0.5

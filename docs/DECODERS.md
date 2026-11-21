@@ -15,6 +15,7 @@ Measured numbers are in [`RESULTS.md`](../RESULTS.md) §7. `pytest` recomputes t
 | BP | `bp.py` | pass probability messages between detectors and error mechanisms | O(iters · nnz) | every message updates at once |
 | BP+OSD | `bp.py` | BP, then Gaussian elimination on the most likely columns | O(n r²) for OSD | BP part parallel, OSD sequential |
 | **BP+UF** | `bp.py` | BP's beliefs become Union-Find's edge weights, per shot | BP + UF | both stages parallel |
+| Local BP+UF | `bp_local.py` | the same, with BP run only near the lit detectors, fused into one kernel | ~4–5× less than BP+UF | same, and scales better across threads |
 
 `n` = error mechanisms, `k` = defects (detectors that fired), `r` = rank of H (≈ number of detectors).
 
@@ -146,6 +147,20 @@ correction.
 * It's the most accurate of our decoders, beating PyMatching at d = 5 and 7 (see RESULTS §7).
 * It was introduced in the same paper as belief-matching (Higgott et al. 2023), with UF in place of MWPM, so it keeps
   UF's hardware-friendliness.
+
+### Local BP+UF (`bp_local.py`)
+
+Global BP+UF spends almost all its time in BP, and BP updates every Tanner-graph edge every iteration even when
+only one or two detectors are lit. Its cost per update is already compiled speed (~5 ns), so the fix is less work,
+not a faster language:
+
+* run BP only on checks within 1 hop of a lit detector (far checks send a fixed "not flipped" message);
+* stop BP after 10 iterations instead of 30 (Union-Find cleans up the rest);
+* turn beliefs into edge costs and run Union-Find in the same compiled kernel, with no per-shot allocations.
+
+It is 3–5× faster than global BP+UF on one thread and 7–9× on 12 threads (d = 5–11, p = 0.1%), with the same
+accuracy from d = 7 up. At d = 5 the 1-hop region costs 1.7× in accuracy (a 2-hop region fixes that but is no
+faster at that size). Numbers: `results/2026-11-21_1559_p1e-3_distance_sweep.md`, *Local BP+UF*.
 
 **Caveat we found**: BP-based decoders aren't strictly distance-preserving. When BP oscillates, its
 posteriors can rank the true error columns hundreds of places down. A few two-fault errors at d = 5

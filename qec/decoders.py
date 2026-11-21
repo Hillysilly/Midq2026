@@ -19,6 +19,7 @@
 | bp                   | Min-sum belief propagation §5.3 (numba)                      | bp.py |
 | bp_osd               | BP + our own OSD-0 over GF(2) §5.3                            | bp.py |
 | bp_uf                | BP posteriors as per-shot weights for Union-Find ("belief-find") | bp.py |
+| bp_uf_local          | the same with BP run only near the lit detectors, fused compiled kernel | bp_local.py |
 
 **Library baselines** (to compare against):
 
@@ -39,6 +40,7 @@ import sinter
 import stim
 
 from .bp import BPDecoder, BPOSDDecoder, BPUnionFindDecoder
+from .bp_local import LocalBPUnionFindDecoder
 from .lookup import LookupTableDecoder
 from .matching import GreedyMatchingDecoder, MWPMDecoder
 from .sparse_blossom import SparseBlossomDecoder
@@ -105,13 +107,14 @@ _FACTORIES: dict[str, Callable[[stim.DetectorErrorModel], object]] = {
     "bp": BPDecoder,
     "bp_osd": BPOSDDecoder,
     "bp_uf": BPUnionFindDecoder,
+    "bp_uf_local": LocalBPUnionFindDecoder,
     "bposd": _bposd,
     "belief_matching": _belief_matching,
 }
 
 DECODER_NAMES = list(_FACTORIES)
 OURS = ["union_find", "union_find_weighted", "mwpm", "sparse_blossom", "greedy_matching", "greedy_matching_2opt",
-        "lookup", "bp", "bp_osd", "bp_uf"]
+        "lookup", "bp", "bp_osd", "bp_uf", "bp_uf_local"]
 BASELINES = ["pymatching", "pymatching_correlated", "bposd", "belief_matching"]
 
 

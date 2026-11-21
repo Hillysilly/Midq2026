@@ -139,6 +139,29 @@
  },
  {
   "metric": "logical error rate (circuit p=0.002)",
+  "decoder": "bp_uf_local",
+  "d": 3,
+  "per_shot": 0.004333333333333333,
+  "per_round": 0.0014486374922267897,
+  "errors": 26,
+  "shots": 6000
+ },
+ {
+  "metric": "logical error rate (circuit p=0.002)",
+  "decoder": "bp_uf_local",
+  "d": 5,
+  "per_shot": 0.0011666666666666668,
+  "per_round": 0.00023355141649888944,
+  "errors": 7,
+  "shots": 6000
+ },
+ {
+  "metric": "Lambda = eps_3/eps_5",
+  "decoder": "bp_uf_local",
+  "Lambda": 6.202649138005455
+ },
+ {
+  "metric": "logical error rate (circuit p=0.002)",
   "decoder": "bp",
   "d": 3,
   "per_shot": 0.02666666666666667,
@@ -217,6 +240,13 @@
  },
  {
   "metric": "fault-weight correction, d=5 (failure fraction)",
+  "decoder": "bp_uf_local",
+  "weight1": 0.0,
+  "weight2": 0.0,
+  "weight3": 0.008666666666666666
+ },
+ {
+  "metric": "fault-weight correction, d=5 (failure fraction)",
   "decoder": "greedy_matching",
   "weight1": 0.0,
   "weight2": 0.021333333333333333,
@@ -280,102 +310,116 @@
   "threshold": 0.15422602420300413
  },
  {
+  "metric": "code-capacity threshold (d3/d5 crossing)",
+  "decoder": "bp_uf_local",
+  "threshold": 0.15144242781804265
+ },
+ {
   "metric": "decode time (circuit p=0.1%, d rounds)",
   "decoder": "union_find",
   "d": 5,
-  "batch_us_per_shot": 0.7220000261440873,
-  "us_per_round": 0.14440000522881746,
-  "single_p50_us": 75.04998939111829,
+  "batch_us_per_shot": 0.7017499883659184,
+  "us_per_round": 0.14034999767318368,
+  "single_p50_us": 75.09998977184296,
   "keeps_up_1us": true
  },
  {
   "metric": "decode time (circuit p=0.1%, d rounds)",
   "decoder": "union_find_weighted",
   "d": 5,
-  "batch_us_per_shot": 1.4178499695844948,
-  "us_per_round": 0.28356999391689897,
-  "single_p50_us": 80.99997648969293,
+  "batch_us_per_shot": 1.387899974361062,
+  "us_per_round": 0.2775799948722124,
+  "single_p50_us": 84.7000046633184,
   "keeps_up_1us": true
  },
  {
   "metric": "decode time (circuit p=0.1%, d rounds)",
   "decoder": "mwpm",
   "d": 5,
-  "batch_us_per_shot": 345.03900019141537,
-  "us_per_round": 69.00780003828308,
-  "single_p50_us": 372.40004166960716,
+  "batch_us_per_shot": 306.92599985438085,
+  "us_per_round": 61.38519997087617,
+  "single_p50_us": 329.5999485999346,
   "keeps_up_1us": false
  },
  {
   "metric": "decode time (circuit p=0.1%, d rounds)",
   "decoder": "sparse_blossom",
   "d": 5,
-  "batch_us_per_shot": 76.40533343267937,
-  "us_per_round": 15.281066686535874,
-  "single_p50_us": 61.14994175732136,
+  "batch_us_per_shot": 67.97599994267026,
+  "us_per_round": 13.595199988534052,
+  "single_p50_us": 58.44997940585017,
   "keeps_up_1us": false
  },
  {
   "metric": "decode time (circuit p=0.1%, d rounds)",
   "decoder": "bp_osd",
   "d": 5,
-  "batch_us_per_shot": 163.38189999805763,
-  "us_per_round": 32.67637999961153,
-  "single_p50_us": 337.24994864314795,
+  "batch_us_per_shot": 162.32914995634928,
+  "us_per_round": 32.46582999126986,
+  "single_p50_us": 354.900024831295,
   "keeps_up_1us": false
  },
  {
   "metric": "decode time (circuit p=0.1%, d rounds)",
   "decoder": "bp_uf",
   "d": 5,
-  "batch_us_per_shot": 93.14835001714528,
-  "us_per_round": 18.629670003429055,
-  "single_p50_us": 408.099964261055,
+  "batch_us_per_shot": 93.15640002023429,
+  "us_per_round": 18.631280004046857,
+  "single_p50_us": 407.949963118881,
+  "keeps_up_1us": false
+ },
+ {
+  "metric": "decode time (circuit p=0.1%, d rounds)",
+  "decoder": "bp_uf_local",
+  "d": 5,
+  "batch_us_per_shot": 9.716000000480562,
+  "us_per_round": 1.9432000000961125,
+  "single_p50_us": 159.5499343238771,
   "keeps_up_1us": false
  },
  {
   "metric": "decode time (circuit p=0.1%, d rounds)",
   "decoder": "greedy_matching",
   "d": 5,
-  "batch_us_per_shot": 133.29164998140186,
-  "us_per_round": 26.658329996280372,
-  "single_p50_us": 201.54996309429407,
+  "batch_us_per_shot": 137.05999997910112,
+  "us_per_round": 27.411999995820224,
+  "single_p50_us": 228.20004960522056,
   "keeps_up_1us": false
  },
  {
   "metric": "decode time (circuit p=0.1%, d rounds)",
   "decoder": "greedy_matching_2opt",
   "d": 5,
-  "batch_us_per_shot": 138.1587500218302,
-  "us_per_round": 27.63175000436604,
-  "single_p50_us": 210.35003010183573,
+  "batch_us_per_shot": 150.40609997231513,
+  "us_per_round": 30.081219994463027,
+  "single_p50_us": 230.70001043379307,
   "keeps_up_1us": false
  },
  {
   "metric": "decode time (circuit p=0.1%, d rounds)",
   "decoder": "bp",
   "d": 5,
-  "batch_us_per_shot": 33.10079994844273,
-  "us_per_round": 6.6201599896885455,
-  "single_p50_us": 353.55001455172896,
+  "batch_us_per_shot": 36.76085005281493,
+  "us_per_round": 7.352170010562986,
+  "single_p50_us": 398.6000083386898,
   "keeps_up_1us": false
  },
  {
   "metric": "decode time (circuit p=0.1%, d rounds)",
   "decoder": "lookup",
   "d": 3,
-  "batch_us_per_shot": 3.096250002272427,
-  "us_per_round": 1.032083334090809,
-  "single_p50_us": 17.29995710775256,
+  "batch_us_per_shot": 3.223349980544299,
+  "us_per_round": 1.0744499935147662,
+  "single_p50_us": 17.900019884109497,
   "keeps_up_1us": false
  },
  {
   "metric": "decode time (circuit p=0.1%, d rounds)",
   "decoder": "pymatching",
   "d": 5,
-  "batch_us_per_shot": 1.1120500275865197,
-  "us_per_round": 0.22241000551730394,
-  "single_p50_us": 12.09997572004795,
+  "batch_us_per_shot": 1.153099990915507,
+  "us_per_round": 0.23061999818310142,
+  "single_p50_us": 12.450036592781544,
   "keeps_up_1us": true
  },
  {
@@ -473,5 +517,29 @@
   "mean": 22.925,
   "p99": 38.0,
   "max": 43.0
+ },
+ {
+  "metric": "parallel depth (circuit p=0.3%)",
+  "decoder": "bp_uf_local",
+  "d": 3,
+  "mean": 1.893,
+  "p99": 11.0,
+  "max": 14.0
+ },
+ {
+  "metric": "parallel depth (circuit p=0.3%)",
+  "decoder": "bp_uf_local",
+  "d": 5,
+  "mean": 5.896,
+  "p99": 18.0,
+  "max": 35.0
+ },
+ {
+  "metric": "parallel depth (circuit p=0.3%)",
+  "decoder": "bp_uf_local",
+  "d": 7,
+  "mean": 9.604,
+  "p99": 21.00999999999999,
+  "max": 34.0
  }
 ]

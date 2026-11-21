@@ -1,6 +1,6 @@
 # midq2026: surface-code decoders, built from scratch
 
-Our entry for the **Northrop Grumman decoder-implementation challenge**. We implemented **nine
+Our entry for the **Northrop Grumman decoder-implementation challenge**. We implemented **ten
 decoding algorithms ourselves** (no decoding library inside), test functions that compute decoder
 metrics, and a benchmark harness that compares them against the standard libraries on
 [Stim](https://github.com/quantumlib/Stim)-generated syndromes. We follow the decoder review
@@ -16,6 +16,7 @@ metrics, and a benchmark harness that compares them against the standard librari
 | Belief propagation | `qec/bp.py` | min-sum on the Tanner graph; numba and whole-array numpy versions |
 | BP+OSD | `qec/bp.py` | BP, then our own GF(2) ordered-statistics decoding with combination sweep |
 | **BP+UF** | `qec/bp.py` | BP's beliefs become per-shot Union-Find weights: our most accurate, and parallel |
+| Local BP+UF | `qec/bp_local.py` | BP only near the lit detectors, fused with UF in one kernel: 3–9× faster than BP+UF |
 
 **Start here:** [`docs/DECODERS.md`](docs/DECODERS.md) (how each works, cost, parallelism),
 [`RESULTS.md`](RESULTS.md) §7 (measured numbers) and
@@ -31,6 +32,9 @@ metrics, and a benchmark harness that compares them against the standard librari
 * Our **Sparse Blossom** (PyMatching's own algorithm, written from scratch in Python) finds matchings of exactly
   PyMatching's weight on every shot we compared, 3–6× faster than our textbook MWPM.
 * With 12 threads our **Union-Find** matches single-call PyMatching's throughput at d = 7 and beats it at d = 3 and 5.
+* **Local BP+UF** runs BP only near the lit detectors: 3–5× faster than global BP+UF on one thread and 7–9× on
+  12 threads, with the same accuracy from d = 7 up.
+* Judges' Q&A prep and the claims we can and can't make: [`docs/JUDGES_BRIEF.md`](docs/JUDGES_BRIEF.md).
 * **Distance-preserving ≠ most accurate:** the BP hybrids miss 0.1–0.3% of two-fault errors at d = 5;
   greedy matching misses 2%, so bigger codes don't help it.
 

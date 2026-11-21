@@ -46,7 +46,7 @@ def test_our_mwpm_equals_pymatching(setup):
 
 
 @pytest.mark.parametrize("name", ["union_find", "union_find_weighted", "mwpm", "sparse_blossom", "greedy_matching",
-                                  "greedy_matching_2opt", "bp_osd", "bp_uf", "lookup"])
+                                  "greedy_matching_2opt", "bp_osd", "bp_uf", "bp_uf_local", "lookup"])
 def test_single_faults_corrected(setup, name):
     d, c, dem, g = setup
     if name == "lookup" and d > 3:
@@ -119,3 +119,18 @@ def test_sparse_blossom_handles_blossoms():
         for k in seen:
             seen[k] += sb.last_stats[k]
     assert seen["blossom"] > 0 and seen["zero_radius"] > 0
+
+
+def test_local_bp_uf_close_to_global():
+    """Local BP+UF restricts BP to the lit detectors' neighbourhood; on the same shots its predictions should
+    almost always match global BP+UF."""
+    from qec.bp import BPUnionFindDecoder
+    from qec.bp_local import LocalBPUnionFindDecoder
+
+    c = memory_circuit(7, 3e-3)
+    dem = detector_error_model(c)
+    dets, _ = sample(c, 2000, seed=9)
+    glob = BPUnionFindDecoder(dem, max_iter=10).decode_batch(dets)
+    for radius in (1, 2):
+        loc = LocalBPUnionFindDecoder(dem, radius=radius, max_iter=10).decode_batch(dets)
+        assert (loc == glob).all(axis=1).mean() >= 0.995

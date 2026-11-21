@@ -19,8 +19,8 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from qec import detector_error_model, make_decoder, memory_circuit  # noqa: E402
 
-SLOW = {"sparse_blossom": 3000, "mwpm": 1000, "bp_uf": 3000, "bp_osd": 1000}
-NUMBA = {"union_find", "union_find_weighted", "bp", "bp_uf"}
+SLOW = {"sparse_blossom": 3000, "mwpm": 1000, "bp_uf": 3000, "bp_uf_local": 10000, "bp_osd": 1000}
+NUMBA = {"union_find", "union_find_weighted", "bp", "bp_uf", "bp_uf_local"}
 
 
 def main() -> None:

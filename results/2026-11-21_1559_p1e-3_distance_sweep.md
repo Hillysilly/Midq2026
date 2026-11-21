@@ -5,6 +5,8 @@
 **Updated 2026-11-21, 16:30 CST:** added our Sparse Blossom decoder, and a decode-only speed table measured after
 fixing a Union-Find slowdown (see *Decode-only speed*).
 
+**Updated 2026-11-21, 17:11 CST:** added local BP+UF (`bp_uf_local`; see *Local BP+UF*).
+
 **Setup:** rotated CSS surface code, Z-basis memory, d rounds per shot, uniform circuit-level depolarizing
 noise p = 0.001 (every gate, reset and measurement), same Stim circuits for every decoder. Each point ran
 until 100 logical errors or its shot cap (20M for the fast decoders, 1–2M for BP+UF, 0.1–1M for the others).
@@ -25,9 +27,12 @@ $B --distances 9 --decoders bp_osd --max-shots 100000
 $B --distances 3 --decoders lookup --max-shots 2000000
 $B --distances 3 5 --decoders sparse_blossom --max-shots 1000000
 $B --distances 7 --decoders sparse_blossom --max-shots 200000
+$B --distances 3 5 7 --decoders bp_uf_local --max-shots 2000000
+$B --distances 9 --decoders bp_uf_local --max-shots 1000000
 
-# decode-only speed table (CPU otherwise idle)
+# decode-only speed tables (CPU otherwise idle)
 .venv/Scripts/python tools/decode_speed.py --p 0.001 --distances 3 5 7 9 11
+.venv/Scripts/python tools/decode_speed.py --p 0.001 --distances 3 5 7 9 11 --decoders pymatching_correlated bp_uf bp_uf_local --max-d-slow 11
 ```
 
 (The d = 11 points for correlated PyMatching and both Union-Finds come from an earlier, stopped run with
@@ -39,6 +44,7 @@ the same settings.)
 |---|---|---|---|---|---|---|---|
 | **PyMatching correlated** (baseline) | 2.8e-4 | **1.8e-5** | **1.2e-6** | **6.7e-8**ᵃ | <1e-7 (0 errors) | **15–18** | 4.1 |
 | **BP+UF** (ours) | 3.0e-4 | 2.3e-5 | 2.1e-6 | 2.2e-7ᵇ | – | 10–13 | 420 |
+| Local BP+UF (ours) | 2.8e-4 | 4.0e-5 | 2.5e-6 | 1.1e-7ᵇ (1 error) | – | 7–16 | 50ᵈ |
 | PyMatching (baseline) | 2.7e-4 | 2.7e-5 | 2.2e-6 | 1.9e-7 | 3.6e-8ᵃ | 10–12 | 1.9 |
 | BP+OSD (ours) | 2.5e-4 | 2.8e-5 | 3.3e-6ᵇ | <4e-6 (0 errors) | – | 8–9 | 570 |
 | MWPM (ours) | 2.6e-4 | 2.9e-5 | – | – | – | 9 | 750 |
@@ -53,6 +59,7 @@ the same settings.)
 Most points have 100+ logical errors (±20% at 95% confidence).
 ᵃ 8–35 errors: roughly ±30–60%. ᵇ 1–7 errors: order of magnitude only.
 "–" = not run at that size (too slow: the slow decoders, BP+OSD at d=11; impossible: lookup beyond d=3).
+ᵈ decode-only, one thread (its Sinter time is inflated by numba compiling the kernel in every worker).
 Λ = ε_d / ε_{d+2}, the range over the distance pairs with enough errors. µs/shot is one CPU thread inside a
 Sinter worker.
 
@@ -134,6 +141,45 @@ What it shows:
   shortest-path search from every lit detector over the whole graph.
 * **Sparse Blossom vs PyMatching:** the same algorithm (identical matching weights on every shot we compared),
   ~130× slower at d = 7. That's the cost of pure Python against tuned C++, not of the algorithm.
+
+## Local BP+UF
+
+Global BP+UF was 80–560× slower than correlated PyMatching. Profiling showed BP already ran at compiled speed
+(~5 ns per message update), so porting to C++ would gain maybe 2–3×. The real cost was the amount of work:
+global BP updated every Tanner-graph edge (5,004 at d = 5, 17,156 at d = 7) every iteration, even with fewer
+than 2 lit detectors, and 20–40% of shots ran all 30 iterations. `qec/bp_local.py` cuts the work three ways,
+in one compiled kernel:
+
+1. **BP only near the lit detectors**: checks within 1 hop (in the check graph) of a lit detector; far-away
+   checks send a fixed "not flipped" message.
+2. **10 BP iterations instead of 30**: Union-Find cleans up after BP anyway.
+3. **Fused with Union-Find**: the beliefs → edge-cost step (a Python loop taking ~20% of the time) now happens
+   inside the kernel, for the touched edges only, and there are no per-shot memory allocations.
+
+Decode-only speed, µs per shot (1 thread / 12 threads), p = 0.1%:
+
+| decoder | d=3 | d=5 | d=7 | d=9 | d=11 |
+|---|---|---|---|---|---|
+| PyMatching correlated (C++, 1 core) | 0.31 | 1.74 | 4.99 | 11.5 | 23.3 |
+| BP+UF, global (30 iterations) | 11.3 / 9.15 | 159 / 80.3 | 1,037 / 370 | 3,907 / 1,463 | 10,284 / 5,589 |
+| **BP+UF, local** | 3.90 / **0.72** | 50.3 / **9.43** | 264 / **52.7** | 856 / **183** | 2,202 / **640** |
+| speed-up, local over global | 2.9× / 13× | 3.2× / 8.5× | 3.9× / 7.0× | 4.6× / 8.0× | 4.7× / 8.7× |
+
+Where the speed-up comes from (same shots, one thread): capping BP at 10 iterations gives ~2.2× by itself
+(d = 7, p = 0.3%: 2,519 → 1,131 µs) at no accuracy cost; locality plus fusing gives another 1.3× at d = 7 and
+2.1× at d = 11. The gain grows with d because a 1-hop region is a smaller share of a bigger graph (43% of the
+checks at d = 7, 21% at d = 11). The local kernel also scales better across threads (5× on 12 threads vs
+~2.8× for the global version).
+
+Accuracy (table at the top): same as global BP+UF at d = 7 (2.5e-6 vs 2.1e-6, intervals overlap), but **1.7×
+worse at d = 5** (4.0e-5 vs 2.3e-5): at small d, a 1-hop region cuts off useful information. A 2-hop region
+restores d = 5 accuracy (164 vs 158 errors in a 60k-shot same-shot test at p = 0.3%) but covers most of the
+graph at these sizes, so it's no faster than global.
+
+Gap to correlated PyMatching: from 208× (d = 7) and 441× (d = 11) on one thread down to 53× and 95×; with 12
+threads, 10× at d = 7 and 27× at d = 11. Circuit-level noise links each detector to many others (space, time and
+hyperedges), so BP neighbourhoods are large; closing the rest needs hardware parallelism, a cheaper BP schedule,
+or running BP only on clusters where it matters.
 
 ## Takeaways
 

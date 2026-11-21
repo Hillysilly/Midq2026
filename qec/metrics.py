@@ -193,6 +193,7 @@ def parallel_depth(decoder, dets: np.ndarray) -> dict | None:
     Returns {"mean", "p99", "max"} over the shots, or None.
     """
     from .bp import BPDecoder, BPOSDDecoder, BPUnionFindDecoder
+    from .bp_local import LocalBPUnionFindDecoder
     from .lookup import LookupTableDecoder
     from .union_find import UnionFindDecoder
 
@@ -207,6 +208,9 @@ def parallel_depth(decoder, dets: np.ndarray) -> dict | None:
         if len(todo):
             decoder.decode_batch(dets[todo])
             steps[todo] += decoder.uf.last_batch_rounds
+    elif isinstance(decoder, LocalBPUnionFindDecoder):
+        decoder.decode_batch(dets)
+        steps = (decoder.last_iterations + decoder.last_uf_rounds).astype(float)
     elif isinstance(decoder, BPOSDDecoder):
         res = decoder.bp.run(dets)
         steps = res.iterations.astype(float) + np.where(res.converged, 0, decoder.osd.rank)
