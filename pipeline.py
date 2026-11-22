@@ -685,6 +685,9 @@ def load_compiled_blossom(dll=_BLOSSOM_DLL):
     if hasattr(lib, "sb_decode_batch_mt"):          # (older step builds don't have it)
         lib.sb_decode_batch_mt.argtypes = [ctypes.c_void_p, u8p, ctypes.c_int, ctypes.c_int, u64p, ctypes.c_int]
         lib.sb_decode_batch_mt.restype = ctypes.c_int
+    if hasattr(lib, "sb_set_correlations"):
+        lib.sb_set_correlations.argtypes = [ctypes.c_void_p, ctypes.c_int, i32p, i32p, f64p]
+        lib.sb_set_correlations.restype = ctypes.c_int
     _BLOSSOM_LIBS[dll] = lib
     return lib
 
@@ -707,9 +710,74 @@ def compiled_edge_arrays(graph, resolution=2 ** 12):
             np.array(ob, np.uint64))
 
 
+def compiled_correlation_rules(graph, dem, resolution=2 ** 12):
+    """Implied-weight rules for correlated matching, following PyMatching's definitions.
+
+    For every pair of edges (components) e, f of the same decomposed error mechanism:
+        joint[e][f] = XOR-accumulated probability of the mechanisms containing both,
+        joint[e][e] = XOR-accumulated probability of every mechanism containing e.
+    If e is used by the first matching, f may be lowered to the weight of
+        q(f|e) = min(0.5, joint[e][f] / joint[e][e]),   w = log((1 - q) / q).
+    Returns (nrules, rule_e, rule_f, rule_w) with edge indices as in compiled_edge_arrays and
+    weights in the same integer scale.
+    """
+    keys = []                                   # same order as compiled_edge_arrays
+    for u in range(graph.size):
+        for nb in graph.adj[u]:
+            if nb.nname == graph.boundary or u < nb.nname:
+                keys.append((u, nb.nname))
+    index = {k: i for i, k in enumerate(keys)}
+    wmax = max((nb.weight for u in range(graph.size) for nb in graph.adj[u]), default=1.0)
+
+    def bxor(a, b):
+        return a * (1 - b) + b * (1 - a)
+
+    joint = {}
+    for inst in dem.flattened():
+        if inst.type != "error":
+            continue
+        p = inst.args_copy()[0]
+        if p <= 0:
+            continue
+        comps = []
+        for group in inst.target_groups():
+            dets = [t.val for t in group if t.is_relative_detector_id()]
+            if len(dets) == 1:
+                comps.append((dets[0], graph.boundary))
+            elif len(dets) == 2:
+                comps.append((min(dets), max(dets)))
+        for i in range(len(comps)):
+            for j in range(i + 1, len(comps)):
+                a, b = comps[i], comps[j]
+                row_a, row_b = joint.setdefault(a, {}), joint.setdefault(b, {})
+                row_a[b] = bxor(row_a.get(b, 0.0), p)
+                row_b[a] = bxor(row_b.get(a, 0.0), p)
+        for c in comps:
+            row = joint.setdefault(c, {})
+            row[c] = bxor(row.get(c, 0.0), p)
+
+    re, rf, rw = [], [], []
+    for e, row in joint.items():
+        marginal = row.get(e, 0.0)
+        if marginal <= 0 or e not in index:
+            continue
+        for f, pj in row.items():
+            if f == e or f not in index:
+                continue
+            q = min(0.5, pj / marginal)
+            if q <= 0:
+                continue
+            w = math.log((1 - q) / q)
+            re.append(index[e])
+            rf.append(index[f])
+            rw.append(2.0 * max(1.0, float(np.rint(w / wmax * resolution))))
+    return (len(re), np.array(re, np.int32), np.array(rf, np.int32), np.array(rw, np.float64))
+
+
 class MyCompiledDecoder(sinter.CompiledDecoder):
     def __init__(self, dem: stim.DetectorErrorModel, method="apsp",
-                 direct_edge=True, pair_cache=False, source_cache=False, threads=1):
+                 direct_edge=True, pair_cache=False, source_cache=False, threads=1,
+                 correlated=False):
         """method="apsp":    Dijkstra from every lit detector + networkx matching.
                              source_cache: keep each detector's full Dijkstra across shots.
         method="blossom": sparse blossom matching, then each pair's obs parity from
@@ -719,8 +787,11 @@ class MyCompiledDecoder(sinter.CompiledDecoder):
         method="compiled": the same sparse blossom + direct edge, in C++ (blossom.cpp).
                              threads: split each batch over this many C++ threads. Leave at 1
                              under sinter, which already runs one worker process per core.
+                             correlated: two-pass correlated matching, as PyMatching's
+                             enable_correlations=True (see compiled_correlation_rules).
         """
         self.threads = threads
+        self.correlated = correlated
         self.num_dets = dem.num_detectors
         self.num_obs = dem.num_observables
         self.dem = dem
@@ -747,6 +818,10 @@ class MyCompiledDecoder(sinter.CompiledDecoder):
         self._handle = self._lib.sb_create(self.num_dets, *compiled_edge_arrays(self.graph))
         if not self._handle:
             raise RuntimeError(self._lib.sb_last_error().decode())
+        if self.correlated:
+            rules = compiled_correlation_rules(self.graph, self.dem)
+            if self._lib.sb_set_correlations(self._handle, *rules) != 0:
+                raise RuntimeError(self._lib.sb_last_error().decode())
 
     def __del__(self):
         if getattr(self, "_handle", None):

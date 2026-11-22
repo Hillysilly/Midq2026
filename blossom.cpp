@@ -155,6 +155,8 @@ struct Decoder {
     // (float weight <= 2 * lightest float edge), so pair_obs can read it off directly.
     std::vector<uint64_t> adj_obs;
     std::vector<char> adj_direct;
+    std::vector<int> adj_eid;                       // CSR position -> input edge index
+    std::vector<int> edge_pos0, edge_pos1;          // input edge -> its CSR positions (pos1 = -1: boundary edge)
     std::vector<std::vector<int>> fnbr;                   // float graph for observable paths (n+1 nodes)
     std::vector<std::vector<double>> fw;
     std::vector<std::vector<uint64_t>> fobs;
@@ -715,7 +717,235 @@ struct Decoder {
         return false;
     }
 
+    // ------------------------------------------------------------------ correlated matching
+    // PyMatching-style two-pass correlated matching (enable_correlations=True):
+    //   pass 1: ordinary matching; collect the edges used an odd number of times by the
+    //           matched shortest paths;
+    //   reweight: every used edge e lowers each correlated edge f to the implied weight
+    //           w(f|e) = -log-odds of min(0.5, P(e and f) / P(e)) if that is lower (weights
+    //           only ever decrease; several rules on one edge keep the minimum);
+    //   pass 2: ordinary matching on the reweighted graph; its paths give the observables;
+    //   undo:   restore the weights.
+    // Weights change from shot to shot here, so nothing precomputed from the fixed weights
+    // (boundary paths, the global direct-edge rule, small-shot shortcuts) is used.
+    bool correlated = false;
+    int m = 0;                                      // number of input edges
+    std::vector<int> rule_off, rule_f;              // implied-weight rules of edge e:
+    std::vector<double> rule_w;                     //   rule_f/rule_w[rule_off[e] .. rule_off[e+1])
+    double base_minB = std::numeric_limits<double>::infinity();   // lightest boundary edge
+    double cur_minB = std::numeric_limits<double>::infinity();
+    std::vector<char> eflip;                        // per edge: used an odd number of times
+    std::vector<char> eseen;                        // per edge: already listed in flipped
+    std::vector<int> flipped;                       // edges whose parity was touched
+    std::vector<std::pair<int, double>> saved;      // (edge, previous weight) for undo
+    std::vector<int> po_from;                       // Dijkstra: CSR position of the parent edge
+    std::vector<int> adj_src;                       // CSR position -> node it leaves from
+    // Two lightest non-boundary neighbours of each node in the BASE weights, valid while none
+    // of the node's edges is reweighted (ndirty[v] counts its currently reweighted edges).
+    std::vector<double> top1w, top2w;
+    std::vector<int> top1nbr;
+    std::vector<int> ndirty;
+
+    double edge_weight(int e) const { return adj_w[edge_pos0[e]]; }
+    void mark_dirty(int e, int delta) {
+        ndirty[adj_src[edge_pos0[e]]] += delta;
+        if (edge_pos1[e] >= 0) ndirty[adj_src[edge_pos1[e]]] += delta;
+    }
+    // Lightest current non-boundary edge at y other than the one to x.
+    double min_other_fast(int y, int x) const {
+        if (ndirty[y]) return min_other(y, x);
+        return top1nbr[y] != x ? top1w[y] : top2w[y];
+    }
+    void set_edge_weight(int e, double w) {
+        adj_w[edge_pos0[e]] = w;
+        if (edge_pos1[e] >= 0) adj_w[edge_pos1[e]] = w;
+    }
+    void flip(int e) {
+        if (!eseen[e]) { eseen[e] = 1; flipped.push_back(e); }
+        eflip[e] ^= 1;
+    }
+
+    // Lightest current non-boundary edge at x, ignoring edges to `skip`.
+    double min_other(int x, int skip) const {
+        double mn = std::numeric_limits<double>::infinity();
+        for (int k = adj_off[x], e = adj_off[x + 1]; k < e; ++k)
+            if (adj_to[k] != -1 && adj_to[k] != skip) mn = std::min(mn, adj_w[k]);
+        return mn;
+    }
+
+    // Observable mask of a shortest path x -> target (target == n: boundary) in the CURRENT
+    // integer weights; with toggle, flips the parity of every edge on it.
+    //  * A direct edge x-y is a shortest path if w <= (lightest other edge at x) + (lightest
+    //    other edge at y): any longer path starts with one such edge and ends with another.
+    //    For the boundary the second term is the lightest boundary edge.
+    //  * Otherwise Dijkstra with the boundary as a sink.
+    uint64_t walk_path(int x, int target, bool toggle) {
+        const int want = (target == n) ? -1 : target;
+        int kd = -1;                                 // one scan of x: the edge to the target,
+        double mx = std::numeric_limits<double>::infinity();   // and x's lightest other edge
+        for (int k = adj_off[x], e = adj_off[x + 1]; k < e; ++k) {
+            const int t = adj_to[k];
+            if (t == want) kd = k;
+            else if (t != -1) mx = std::min(mx, adj_w[k]);
+        }
+        if (kd >= 0) {
+            double bound = mx + (target == n ? cur_minB : min_other_fast(target, x));
+            if (adj_w[kd] <= bound) {
+                if (toggle) flip(adj_eid[kd]);
+                return adj_obs[kd];
+            }
+        }
+        if (po_dist.empty()) {
+            po_dist.assign(n + 1, std::numeric_limits<double>::infinity());
+            po_obs.assign(n + 1, 0);
+            po_fin.assign(n + 1, 0);
+        }
+        if (po_from.empty()) po_from.assign(n + 1, -1);
+        auto cmp = std::greater<std::pair<double, int>>();
+        po_heap.clear();
+        po_dist[x] = 0.0; po_from[x] = -1; po_touched.push_back(x);
+        po_heap.push_back({0.0, x});
+        bool found = false;
+        while (!po_heap.empty()) {
+            std::pop_heap(po_heap.begin(), po_heap.end(), cmp);
+            auto [d, v] = po_heap.back(); po_heap.pop_back();
+            if (po_fin[v]) continue;
+            po_fin[v] = 1;
+            if (v == target) { found = true; break; }
+            if (v == n) continue;
+            for (int k = adj_off[v], e = adj_off[v + 1]; k < e; ++k) {
+                int u = adj_to[k] == -1 ? n : adj_to[k];
+                double nd = d + adj_w[k];
+                if (!po_fin[u] && nd < po_dist[u]) {
+                    if (po_dist[u] == std::numeric_limits<double>::infinity()) po_touched.push_back(u);
+                    po_dist[u] = nd; po_from[u] = k;
+                    po_heap.push_back({nd, u});
+                    std::push_heap(po_heap.begin(), po_heap.end(), cmp);
+                }
+            }
+        }
+        uint64_t mask = 0;
+        if (found) {
+            for (int v = target; v != x; ) {        // walk back along parent edges
+                int k = po_from[v];
+                mask ^= adj_obs[k];
+                if (toggle) flip(adj_eid[k]);
+                v = adj_src[k];
+            }
+        }
+        for (int v : po_touched) { po_dist[v] = std::numeric_limits<double>::infinity(); po_fin[v] = 0; }
+        po_touched.clear();
+        if (!found) throw std::runtime_error("no path");
+        return mask;
+    }
+
+    // Is pass 1's matching still optimal after reweighting? At the end of pass 1 the regions are
+    // an optimal dual solution. Only reweighted edges changed, and they only got lighter, so it
+    // is enough that each of them still respects the regions (then the old duals stay feasible
+    // and the old matching stays tight, hence optimal; pass 2 could only pick an equal-weight
+    // alternative). For a reweighted edge a-b with new weight w (local = 0 if uncovered or the
+    // boundary):
+    //   * a, b in the same simple (non-blossom) region: |local(a) - local(b)| <= w, i.e. the
+    //     lighter edge is no shortcut inside the region;
+    //   * otherwise: local(a) + local(b) <= w, i.e. the regions still don't overlap across it
+    //     (conservative inside a blossom, where both sides include the blossom's radius).
+    // Must be called before reset(), while the pass-1 regions still exist.
+    bool pass1_still_optimal() const {
+        for (const auto& sv : saved) {
+            const int e = sv.first;
+            const int a = adj_src[edge_pos0[e]];
+            const int b = edge_pos1[e] >= 0 ? adj_src[edge_pos1[e]] : -1;
+            const double w = edge_weight(e);
+            const double la = top[a] >= 0 ? local(a) : 0.0;
+            const double lb = (b >= 0 && top[b] >= 0) ? local(b) : 0.0;
+            const bool same_simple = b >= 0 && top[a] >= 0 && top[a] == top[b] && !R[top[a]].blossom;
+            if (same_simple ? std::fabs(la - lb) > w + TOL : la + lb > w + TOL) return false;
+        }
+        return true;
+    }
+
+    void undo_reweights() {
+        for (auto it = saved.rbegin(); it != saved.rend(); ++it) {
+            set_edge_weight(it->first, it->second);
+            mark_dirty(it->first, -1);
+        }
+        saved.clear();
+        cur_minB = base_minB;
+    }
+
+    void clear_flips() {
+        for (int e : flipped) { eflip[e] = 0; eseen[e] = 0; }
+        flipped.clear();
+    }
+
+    // Lower the weights implied by the edges used an odd number of times, then clear the parities.
+    void apply_reweights() {
+        for (int e : flipped) {
+            if (!eflip[e]) continue;
+            for (int r = rule_off[e]; r < rule_off[e + 1]; ++r) {
+                int f = rule_f[r];
+                double w = rule_w[r];
+                double cur = edge_weight(f);
+                if (w < cur) {
+                    saved.push_back({f, cur});
+                    set_edge_weight(f, w);
+                    mark_dirty(f, +1);
+                    if (edge_pos1[f] < 0) cur_minB = std::min(cur_minB, w);
+                }
+            }
+        }
+        clear_flips();
+    }
+
+    uint64_t decode_correlated(const std::vector<int>& defects) {
+        if (defects.empty()) return 0;
+        if ((int)eflip.size() < m) { eflip.assign(m, 0); eseen.assign(m, 0); }
+        if (defects.size() == 1) {
+            // One lit detector: in both passes the only matching is "to the boundary", so each
+            // pass is just a shortest boundary path (pass 2 in the reweighted graph).
+            try {
+                const int x = defects[0];
+                uint64_t obs1 = walk_path(x, n, true);
+                apply_reweights();
+                if (saved.empty()) return obs1;
+                uint64_t obs2 = walk_path(x, n, false);
+                undo_reweights();
+                return obs2;
+            } catch (...) {
+                clear_flips();
+                undo_reweights();
+                throw;
+            }
+        }
+        try {
+            // pass 1
+            match(defects);
+            uint64_t obs1 = 0;
+            for (const Edge& p : pairs) obs1 ^= walk_path(p.first, p.second == -1 ? n : p.second, true);
+            apply_reweights();                       // (pass-1 regions still alive)
+            const bool skip = saved.empty() || pass1_still_optimal();
+            reset(defects);
+            if (skip) {                              // pass 2 would return pass 1's matching
+                undo_reweights();
+                return obs1;
+            }
+            // pass 2 on the reweighted graph
+            match(defects);
+            uint64_t obs2 = 0;
+            for (const Edge& p : pairs) obs2 ^= walk_path(p.first, p.second == -1 ? n : p.second, false);
+            reset(defects);
+            undo_reweights();
+            return obs2;
+        } catch (...) {
+            reset(defects);
+            clear_flips();
+            undo_reweights();
+            throw;
+        }
+    }
+
     uint64_t decode(const std::vector<int>& defects) {
+        if (correlated) return decode_correlated(defects);
         if (defects.empty()) return 0;
         uint64_t quick;
         if (shortcut(defects, quick)) return quick;
@@ -765,15 +995,22 @@ EXPORT void* sb_create(int n, int m, const int* eu, const int* ev, const double*
         }
         D->direct_limit = 2.0 * wmin;
         D->adj_off.assign(n + 1, 0);
+        D->m = m;
+        D->edge_pos0.assign(m, -1);
+        D->edge_pos1.assign(m, -1);
         double wimin = std::numeric_limits<double>::infinity();
         for (int v = 0; v < n; ++v) {
             D->adj_off[v + 1] = D->adj_off[v] + (int)nbr[v].size();
             for (size_t j = 0; j < nbr[v].size(); ++j) {
                 auto [u, w] = nbr[v][j];
                 int i = nbr_edge[v][j];
+                int pos = (int)D->adj_to.size();
+                if (D->edge_pos0[i] < 0) D->edge_pos0[i] = pos; else D->edge_pos1[i] = pos;
+                if (u == -1) D->base_minB = std::min(D->base_minB, w);
                 D->adj_to.push_back(u); D->adj_w.push_back(w); wimin = std::min(wimin, w);
                 D->adj_obs.push_back(eobs[i]);
                 D->adj_direct.push_back(wf[i] <= D->direct_limit);
+                D->adj_eid.push_back(i);
             }
         }
         D->int_direct_limit = 2.0 * wimin;
@@ -886,6 +1123,50 @@ EXPORT int sb_decode_batch_mt(void* h, const uint8_t* data, int shots, int bytes
 }
 
 EXPORT const char* sb_last_error() { return last_error.c_str(); }
+
+// Switch a decoder to correlated matching. Rule r says: if edge rule_e[r] is used by the first
+// matching, edge rule_f[r] may be lowered to integer weight rule_w[r] (indices are input edge
+// indices as passed to sb_create). Returns 0 on success.
+EXPORT int sb_set_correlations(void* h, int nrules, const int* rule_e, const int* rule_f, const double* rule_w) {
+    auto* D = static_cast<Decoder*>(h);
+    try {
+        std::vector<int> count(D->m + 1, 0);
+        for (int r = 0; r < nrules; ++r) {
+            if (rule_e[r] < 0 || rule_e[r] >= D->m || rule_f[r] < 0 || rule_f[r] >= D->m)
+                throw std::runtime_error("correlation rule refers to an unknown edge");
+            ++count[rule_e[r] + 1];
+        }
+        D->rule_off.assign(D->m + 1, 0);
+        for (int e = 0; e < D->m; ++e) D->rule_off[e + 1] = D->rule_off[e] + count[e + 1];
+        D->rule_f.assign(nrules, 0);
+        D->rule_w.assign(nrules, 0.0);
+        std::vector<int> fill(D->rule_off.begin(), D->rule_off.end() - 1);
+        for (int r = 0; r < nrules; ++r) {
+            int slot = fill[rule_e[r]]++;
+            D->rule_f[slot] = rule_f[r];
+            D->rule_w[slot] = rule_w[r];
+        }
+        D->adj_src.assign(D->adj_to.size(), 0);
+        for (int v = 0; v < D->n; ++v)
+            for (int k = D->adj_off[v]; k < D->adj_off[v + 1]; ++k) D->adj_src[k] = v;
+        const double INF = std::numeric_limits<double>::infinity();
+        D->top1w.assign(D->n, INF); D->top2w.assign(D->n, INF); D->top1nbr.assign(D->n, -2);
+        D->ndirty.assign(D->n, 0);
+        for (int v = 0; v < D->n; ++v)
+            for (int k = D->adj_off[v]; k < D->adj_off[v + 1]; ++k) {
+                if (D->adj_to[k] == -1) continue;
+                double w = D->adj_w[k];
+                if (w < D->top1w[v]) { D->top2w[v] = D->top1w[v]; D->top1w[v] = w; D->top1nbr[v] = D->adj_to[k]; }
+                else if (w < D->top2w[v]) D->top2w[v] = w;
+            }
+        D->cur_minB = D->base_minB;
+        D->correlated = true;
+        return 0;
+    } catch (const std::exception& e) {
+        last_error = e.what();
+        return -1;
+    }
+}
 
 // Matched (detector, detector or -1) pairs of the most recently decoded shot, for testing.
 EXPORT int sb_last_pairs(void* h, int* out, int max_pairs) {

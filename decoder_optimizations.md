@@ -12,6 +12,7 @@ measurements of each on its own and combined.
 | Source cache | Dijkstra + networkx | **4.2× faster** (104 → 24.6 ms/shot) | Only as a comparison point. It costs about 75 MB per process, and blossom is still 35× faster. |
 | Compiling to C++ | sparse blossom | **15× faster** (677 → 46.6 µs/shot) | **Yes.** It's now ~4× slower than PyMatching, down from ~60×. See section 4. |
 | Optimizing the C++ (12 steps) | sparse blossom (C++) | **8× faster** (47.8 → 5.98 µs/shot) | **Yes.** Now **1.8–3.1× faster than PyMatching** on one core. See section 5. |
+| Correlated matching (4 steps) | sparse blossom (C++), correlated | 2.3–3.0× faster than PyMatching's correlated mode | **Yes.** Same answers as PyMatching (99.9–100% agreement, matching error rates). See section 6. |
 
 Every variant gave exactly the same prediction as PyMatching on every shot it decoded (100% agreement at
 every distance).
@@ -466,6 +467,116 @@ per-shot state; the graph is only ever read. Not pinned to a core, median of 3 r
   choices between near-ties.
 - The threaded path matched the single-threaded path on every shot.
 
+## 6. Correlated matching (branch `correlated-blossom`)
+
+### What it is
+
+Plain matching splits every hyperedge (a fault that lights 3–4 detectors) into independent graph
+edges and forgets that the pieces belong together. Correlated matching puts that link back. Our
+implementation follows PyMatching's `enable_correlations=True` exactly, as read from its source:
+
+1. **Rules, built once from the DEM.** For every pair of edges e, f that are pieces of the same
+   decomposed fault:
+   - `joint[e][f]` = probability (XOR-accumulated) of the faults containing both;
+   - `joint[e][e]` = probability of every fault containing e, decomposed or not.
+
+   If e gets used, f may be lowered to the weight of `q = min(0.5, joint[e][f] / joint[e][e])`.
+   That's `compiled_correlation_rules` in `pipeline.py`. At d = 9 there are about 58,000 rules,
+   roughly 5 per edge. A typical implied weight is about 0.44× the edge's normal weight.
+2. **Pass 1:** ordinary matching. Then walk each matched pair's shortest path and keep the edges
+   used an odd number of times (an edge used by two paths cancels out).
+3. **Reweight:** apply every rule of every used edge. Weights only ever go down; if several rules
+   hit the same edge, it keeps the lowest.
+4. **Pass 2:** ordinary matching on the reweighted graph. Its paths give the prediction. Then the
+   weights are restored.
+
+In C++ this is `decode_correlated` in `blossom.cpp`, switched on with `sb_set_correlations`. In
+Python it's `MyCompiledDecoder(dem, method="compiled", correlated=True)`.
+
+Weights change from shot to shot here, so nothing precomputed from the fixed weights can be used:
+not the precomputed boundary paths, not the global direct-edge rule, not the small-shot shortcuts.
+Path walking instead uses a local rule that stays valid after reweighting: a direct edge x–y is a
+shortest path if its weight is at most (lightest other edge at x) + (lightest other edge at y).
+
+### Accuracy: same answers as PyMatching's correlated mode
+
+Identical shots, logical errors counted for each decoder:
+
+| d | p | shots | ours, correlated | PyMatching, correlated | PyMatching, plain | agreement with PyMatching correlated |
+|---|---|---|---|---|---|---|
+| 3 | 0.1% | 400,000 | 1,603 | 1,603 | 936 | 99.999% |
+| 5 | 0.1% | 400,000 | 94 | 96 | 176 | 99.9995% |
+| 7 | 0.1% | 100,000 | 1 | 1 | 2 | 100% |
+| 9 | 0.1% | 40,000 | 0 | 0 | 0 | 100% |
+| 5 | 0.5% | 100,000 | 3,043 | 3,038 | 4,353 | 99.94% |
+| 7 | 0.5% | 40,000 | 712 | 713 | 1,369 | 99.90% |
+
+What the table shows:
+- **Correlated matching helps a lot from d = 5 up**, roughly 1.4–1.9× fewer errors.
+- **At d = 3 it makes things worse** (1,603 errors vs 936). Ours reproduces this exactly, so it's a
+  property of the correlated rule itself, not something specific to PyMatching's implementation.
+- **The remaining disagreements are not from weight rounding.** Going from 2¹² to 2²⁰ integer
+  weight levels changed nothing. They come from pass 1 choosing between equally short paths:
+  PyMatching traces paths from the collision point through its own search structure, we run our
+  own shortest-path search, and when two paths tie, a different set of edges gets reweighted.
+
+### Ablation (µs per shot, one core; in brackets: time as a multiple of PyMatching's correlated mode)
+
+![Correlated sparse blossom ablation](correlated_ablation.png)
+
+| Step | Change | d = 3 | d = 5 | d = 7 | d = 9 |
+|---|---|---|---|---|---|
+| c00 | Two-pass correlated matching on the optimized matcher | 0.645 (0.43×) | 4.32 (0.44×) | 13.7 (0.43×) | 32.1 (0.40×) |
+| c01 | Faster direct-edge test (one scan, precomputed lightest neighbours) | 0.588 (0.39×) | 4.40 (0.45×) | 13.8 (0.43×) | 31.9 (0.40×) |
+| c02 | Skip pass 2 when pass 1's matching provably stays optimal | 0.529 (0.35×) | 4.19 (0.43×) | 13.6 (0.43×) | 32.8 (0.41×) |
+| c03 | One lit detector: both passes are just shortest boundary paths | **0.501 (0.33×)** | **4.28 (0.44×)** | **13.7 (0.43×)** | **32.3 (0.41×)** |
+| | **PyMatching, correlated** | 1.50 | 9.83 | 31.8 | 79.4 |
+
+**Result: 2.3–3.0× faster than PyMatching's correlated mode.** Almost all of that comes from step
+c00: both passes run on the fast matcher from section 5. The correlation-specific steps help only at
+d = 3, a combined 1.29×. At d = 5–9 they're within the ±5% timing noise.
+
+This run happened while the laptop was in a slower power state: PyMatching's plain mode measured
+about 2.5× slower than in section 5. The ratios are measured in the same rounds and remain valid, but
+compare absolute times only within this table.
+
+How the steps were checked:
+- Every step was checked at high noise against PyMatching's correlated mode: 99.88–100% agreement,
+  with matching error counts.
+- Steps c02 and c03 gave **identical predictions** to the previous step on 740,000–750,000 shots
+  (d = 3–9, p = 0.1–0.5%).
+
+### Why the correlation-specific steps don't buy much
+
+Profile of step c00 at d = 9:
+
+| Part | Share of time |
+|---|---|
+| matching, pass 1 | ~33% |
+| matching, pass 2 | ~33% |
+| walking pass-1 paths (which edges were used) | ~10% |
+| reweighting (about 136 edges lowered per shot) | ~10% |
+| walking pass-2 paths (the prediction) | ~9% |
+
+Our correlated decode costs about 2.4–2.5× a plain decode. That's close to the floor of "two
+matchings plus a bit"; PyMatching's correlated mode costs 2.5–3.5× its own plain mode.
+
+- **c01:** the path walks were already cheap (98–99% use a single edge), so making the test faster
+  changed nothing measurable.
+- **c02:** this is the only way to avoid a whole pass. At the end of pass 1, the regions are an
+  optimal solution. If every reweighted edge still respects them, the old matching stays optimal
+  for the new weights, and pass 2 can be skipped. Precisely:
+  - endpoints in different regions (or uncovered): `local(a) + local(b) ≤ w'`
+  - both endpoints in the same simple region: `|local(a) − local(b)| ≤ w'`
+  - inside blossoms: the sum test, which is conservative there
+
+  The test passes on 70% of shots at d = 3 and 45% at d = 5, but only 1% at d = 9. At larger
+  distances nearly every shot reweights some edge right next to a matched path, which is the whole
+  point of correlated matching. Yet pass 2 changed the prediction on only 52, 9 and 0 of 20,000
+  shots at d = 3, 5 and 9.
+- **Pass 2 almost never changes the answer** at low p, but it does change the regions, so a test
+  based on pass 1's regions can't tell that in advance at d = 9.
+
 ## Possible next steps
 
 - **Compressed edges** (what PyMatching does): XOR edge `obs_mask` values into each region while it
@@ -475,6 +586,12 @@ per-shot state; the graph is only ever read. Not pinned to a core, median of 3 r
   already covers the common collisions; blossoms are rare at p = 0.1%.
 - **Integer event times.** With even integer weights, PyMatching keeps all event times integral. That
   would allow a simpler bucket queue instead of the radix heap.
+- **Correlated: re-solve pass 2 only where needed.** Pass 1's regions are violated only around the
+  reweighted edges. Re-matching just the lit detectors involved there, and keeping pass 1's answer
+  elsewhere, could remove most of pass 2 at large d. Doing that exactly needs care, because changes
+  can spread through blossoms and alternating trees.
+- **Correlated: record pass 1's edges during growth** (compressed edges again), instead of walking
+  paths afterwards (~10% at d = 9).
 
 ## Reproducing
 

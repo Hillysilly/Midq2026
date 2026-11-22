@@ -9,8 +9,14 @@ Laptop timings are noisy (hybrid P/E cores, power limits), so the process is pin
 at high priority, decoders are timed in alternating rounds, and every number is also given as a
 ratio to PyMatching measured in the same rounds.
 
-Usage:  python compiled_ablation.py            (all steps)
-        python compiled_ablation.py 0 3 5      (only those step numbers)
+Correlated mode (--correlated): the steps in blossom_steps/correlated/ are run with correlated
+matching switched on and compared with PyMatching's enable_correlations=True. Exact agreement is
+not expected there (when pass 1 has several equally short paths, the two decoders may reweight
+different edges), so the check is an agreement rate on high-noise shots instead of tie weights.
+
+Usage:  python compiled_ablation.py                      (all steps)
+        python compiled_ablation.py 0 3 5                (only those step numbers)
+        python compiled_ablation.py --correlated [0 1]   (correlated-matching steps)
 """
 import ctypes
 import glob
@@ -31,6 +37,48 @@ BUILD_DIR = os.path.join(STEPS_DIR, "build")
 SHOTS = {3: 200_000, 5: 100_000, 7: 40_000, 9: 20_000}
 ROUNDS = 7
 NOISE = 1e-3
+CORRELATED = False
+
+
+def set_mode(correlated):
+    """Plain steps live in blossom_steps/, correlated-matching steps in blossom_steps/correlated/."""
+    global CORRELATED, STEPS_DIR, BUILD_DIR
+    CORRELATED = correlated
+    STEPS_DIR = os.path.join(HERE, "blossom_steps", "correlated") if correlated else os.path.join(HERE, "blossom_steps")
+    BUILD_DIR = os.path.join(STEPS_DIR, "build")
+
+
+def make_handle(lib, dem, graph, arrays, rules=None):
+    h = lib.sb_create(dem.num_detectors, *arrays)
+    if rules is not None and lib.sb_set_correlations(h, *rules) != 0:
+        raise RuntimeError(lib.sb_last_error().decode())
+    return h
+
+
+def check_correlated(num, dll, cases=((5, 5e-3, 20000), (7, 5e-3, 5000), (9, 3e-3, 2000)), min_agree=0.995):
+    """Correlated steps: high-noise agreement with PyMatching's correlated mode, and error counts."""
+    lib = P.load_compiled_blossom(dll)
+    ok = True
+    for d, p, n in cases:
+        circuit = P.make_circuit(d, p)
+        dem = circuit.detector_error_model(decompose_errors=True)
+        dets, obs = circuit.compile_detector_sampler(seed=78).sample(n, separate_observables=True, bit_packed=True)
+        dets = np.ascontiguousarray(dets)
+        truth = np.unpackbits(obs, axis=1, bitorder="little")[:, 0].astype(np.uint64)
+        graph = P.sim_graph(dem.num_detectors, dem)
+        h = make_handle(lib, dem, graph, P.compiled_edge_arrays(graph), P.compiled_correlation_rules(graph, dem))
+        out = np.zeros(n, dtype=np.uint64)
+        if lib.sb_decode_batch(h, dets, n, dets.shape[1], out) != 0:
+            raise RuntimeError(f"step {num}: {lib.sb_last_error().decode()}")
+        lib.sb_destroy(h)
+        pm = pymatching.Matching.from_detector_error_model(dem, enable_correlations=True)
+        ref = pm.decode_batch(dets, bit_packed_shots=True, enable_correlations=True)[:, 0].astype(np.uint64)
+        agree = float(((out & 1) == ref).mean())
+        ok &= agree >= min_agree
+        print(f"  step {num:02d} high noise d={d} p={p}: agree {agree:.3%} with PyMatching-correlated, "
+              f"errors {int(((out & 1) != truth).sum())} vs {int((ref != truth).sum())}"
+              f" -> {'ok' if agree >= min_agree else 'LOW AGREEMENT'}")
+    return ok
 
 
 def pin_to_one_core(cpu=2):
@@ -131,6 +179,9 @@ STEP_LABELS = {   # short x-axis labels for the plot
     5: "no-alloc dissolve", 6: "no-alloc pair_obs", 7: "lazy reschedule", 8: "small-shot shortcuts",
     9: "no division", 10: "radix heap", 11: "flat pair_obs", 12: "threads API",
 }
+CORR_STEP_LABELS = {   # correlated-matching steps (blossom_steps/correlated/)
+    0: "two-pass port", 1: "fast direct-edge test", 2: "skip pass 2 (certificate)", 3: "1-defect shortcut",
+}
 D_COLORS = {3: "#6da7ec", 5: "#2a78d6", 7: "#1c5cab", 9: "#104281"}   # light -> dark = small -> large d
 PM_COLOR = "#eb6834"
 
@@ -140,7 +191,9 @@ def plot_ablation(results_path=None, out_path=None):
     step gave over the previous one (right)."""
     import matplotlib.pyplot as plt
     results_path = results_path or os.path.join(STEPS_DIR, "results_all.json")
-    out_path = out_path or os.path.join(HERE, "compiled_ablation.png")
+    out_path = out_path or os.path.join(HERE, "correlated_ablation.png" if CORRELATED else "compiled_ablation.png")
+    labels_for = CORR_STEP_LABELS if CORRELATED else STEP_LABELS
+    ref_name = "PyMatching (correlated)" if CORRELATED else "PyMatching"
     with open(results_path) as f:
         rows = json.load(f)
     ds = sorted({r["d"] for r in rows})
@@ -159,8 +212,8 @@ def plot_ablation(results_path=None, out_path=None):
         ax1.plot([steps[0], steps[-1]], [pm, pm], ls="--", lw=1.8, color=PM_COLOR, zorder=1)
         ax1.plot(steps, us, "o-", ms=6, lw=2, color=color, label=f"ours, d = {d}", zorder=3)
         labels.append([us[-1], us[-1], f"ours d={d}: {us[-1]:.2f} us  ({pm / us[-1]:.1f}x faster)", color])
-        labels.append([pm, pm, f"PyMatching d={d}: {pm:.2f} us", PM_COLOR])
-    ax1.plot([], [], ls="--", lw=1.8, color=PM_COLOR, label="PyMatching (one line per d)")
+        labels.append([pm, pm, f"{ref_name} d={d}: {pm:.2f} us", PM_COLOR])
+    ax1.plot([], [], ls="--", lw=1.8, color=PM_COLOR, label=f"{ref_name} (one line per d)")
     # right-hand labels: spread apart (in log space) any that would overlap
     labels.sort(key=lambda r: r[0])
     for i in range(1, len(labels)):
@@ -174,7 +227,7 @@ def plot_ablation(results_path=None, out_path=None):
     ax1.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:g}"))
     ax1.minorticks_off()
     ax1.set_ylabel("decode time per shot (us, 1 core)")
-    ax1.set_title("C++ sparse blossom, step by step, vs PyMatching")
+    ax1.set_title(("Correlated" if CORRELATED else "C++") + f" sparse blossom, step by step, vs {ref_name}")
     ax1.set_xlim(steps[0] - 0.4, steps[-1] + 5.2)
 
     # right: speedup of each step over the previous one, grouped by distance
@@ -194,25 +247,27 @@ def plot_ablation(results_path=None, out_path=None):
 
     for ax, xs in ((ax1, steps), (ax2, steps[1:])):
         ax.set_xticks(xs)
-        ax.set_xticklabels([f"{s:02d} {STEP_LABELS.get(s, '')}" for s in xs], fontsize=8,
+        ax.set_xticklabels([f"{s:02d} {labels_for.get(s, '')}" for s in xs], fontsize=8,
                            rotation=40, ha="right", rotation_mode="anchor")
         ax.grid(True, axis="y", color="#e6e5e1", lw=0.8)
         ax.set_axisbelow(True)
         for side in ("top", "right"):
             ax.spines[side].set_visible(False)
-        ax.legend(frameon=False, fontsize=9, loc="upper right")
+        ax.legend(frameon=False, fontsize=9, loc="lower left" if (CORRELATED and ax is ax1) else "upper right")
     fig.tight_layout()
     fig.savefig(out_path, dpi=150)
     print(f"saved plot to {out_path}")
     return fig
 
 
-def main(selected=None):
+def main(selected=None, correlated=False):
+    set_mode(correlated)
     pin_to_one_core()
     steps = step_sources(selected)
     dlls = {num: build(src) for num, _, src in steps}
     for num, _, _ in steps:
-        if not check_high_noise(num, dlls[num]):
+        passed = check_correlated(num, dlls[num]) if correlated else check_high_noise(num, dlls[num])
+        if not passed:
             raise SystemExit(f"step {num} fails the high-noise check")
     results = []
     for d, shots in SHOTS.items():
@@ -223,13 +278,14 @@ def main(selected=None):
         dets = np.ascontiguousarray(dets)
         graph = P.sim_graph(dem.num_detectors, dem)
         arrays = P.compiled_edge_arrays(graph)
-        pm = pymatching.Matching.from_detector_error_model(dem)
-        ref = pm.decode_batch(dets, bit_packed_shots=True)[:, 0].astype(np.uint64)
+        rules = P.compiled_correlation_rules(graph, dem) if correlated else None
+        pm = pymatching.Matching.from_detector_error_model(dem, enable_correlations=correlated)
+        ref = pm.decode_batch(dets, bit_packed_shots=True, enable_correlations=correlated)[:, 0].astype(np.uint64)
 
         handles = {}
         for num, name, _ in steps:
             lib = P.load_compiled_blossom(dlls[num])
-            h = lib.sb_create(dem.num_detectors, *arrays)
+            h = make_handle(lib, dem, graph, arrays, rules)
             out = np.zeros(shots, dtype=np.uint64)
             if lib.sb_decode_batch(h, dets, shots, dets.shape[1], out) != 0:
                 raise RuntimeError(f"step {num}: {lib.sb_last_error().decode()}")
@@ -240,7 +296,8 @@ def main(selected=None):
         out = np.zeros(shots, dtype=np.uint64)
         for _ in range(ROUNDS):
             t0 = time.perf_counter()
-            pm.decode_batch(dets, bit_packed_shots=True, bit_packed_predictions=True)
+            pm.decode_batch(dets, bit_packed_shots=True, bit_packed_predictions=True,
+                            enable_correlations=correlated)
             times["pm"].append((time.perf_counter() - t0) / shots * 1e6)
             for num, _, _ in steps:
                 lib, h, _ = handles[num]
@@ -268,4 +325,7 @@ def main(selected=None):
 
 
 if __name__ == "__main__":
-    main([int(a) for a in sys.argv[1:]] or None)
+    args = sys.argv[1:]
+    corr = "--correlated" in args
+    nums = [int(a) for a in args if a != "--correlated"]
+    main(nums or None, correlated=corr)
