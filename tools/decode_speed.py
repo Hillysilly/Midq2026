@@ -26,7 +26,7 @@ NUMBA = {"union_find", "union_find_weighted", "bp", "bp_uf", "bp_uf_local"}
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--p", type=float, default=1e-3)
-    ap.add_argument("--distances", type=int, nargs="+", default=[3, 5, 7, 9, 11])
+    ap.add_argument("--distances", type=int, nargs="+", default=[3, 5, 7, 9])
     ap.add_argument("--decoders", nargs="+",
                     default=["pymatching", "pymatching_correlated", "union_find", "union_find_weighted", "sparse_blossom", "mwpm"])
     ap.add_argument("--shots", type=int, default=200_000)

@@ -23,7 +23,7 @@ from qec import detector_error_model, make_decoder, memory_circuit  # noqa: E402
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--decoder", default="sparse_blossom")
-    ap.add_argument("--distances", type=int, nargs="+", default=[3, 5, 7])
+    ap.add_argument("--distances", type=int, nargs="+", default=[3, 5, 7, 9])
     ap.add_argument("--ps", type=float, nargs="+", default=[1e-3, 3e-3, 5e-3, 1e-2])
     ap.add_argument("--shots", type=int, default=2000)
     ap.add_argument("--seed", type=int, default=99)
