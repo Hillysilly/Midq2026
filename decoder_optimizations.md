@@ -335,8 +335,10 @@ table can be rebuilt and re-measured with `python compiled_ablation.py`.
 
 ![C++ sparse blossom ablation: time relative to PyMatching per step, and the speedup of each step](compiled_ablation.png)
 
-- **Left:** each step's time as a multiple of PyMatching's, one line per distance. Below the orange
-  1× line means faster than PyMatching.
+- **Left:** time per shot after each step (log scale), one blue line per distance. Each distance
+  has its own orange dashed line for PyMatching, because PyMatching's time also grows with d
+  (0.24 → 11.1 µs from d = 3 to 9). Where a blue line drops below its own orange line, our decoder
+  becomes faster than PyMatching at that distance.
 - **Right:** how much faster each step made the decoder compared with the step before. Bars inside
   the grey ±5% band are within timing noise.
 - Running `python compiled_ablation.py` with no arguments re-measures everything and redraws the

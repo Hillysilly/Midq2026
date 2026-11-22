@@ -147,30 +147,35 @@ def plot_ablation(results_path=None, out_path=None):
     steps = sorted({r["step"] for r in rows})
     by = {(r["d"], r["step"]): r for r in rows}
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5.6), gridspec_kw=dict(width_ratios=[1.15, 1]))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6), gridspec_kw=dict(width_ratios=[1.35, 1]))
 
-    # left: time as a multiple of PyMatching's
-    ax1.axhline(1.0, color=PM_COLOR, lw=2, ls="--", zorder=1)
-    ax1.text(steps[-1] + 0.35, 1.03, "PyMatching", color=PM_COLOR, va="bottom", fontsize=9.5, fontweight="bold")
-    ends = []
+    # left: absolute time per shot. PyMatching gets its own dashed reference line per distance
+    # (it does not change with our steps, but it does grow with d).
+    labels = []   # [y, y_label, text, color]
     for d in ds:
-        ratio = [by[(d, s)]["us"] / by[(d, s)]["pm_us"] for s in steps]
-        ax1.plot(steps, ratio, "o-", ms=6, lw=2, color=D_COLORS.get(d, "#2a78d6"), label=f"d = {d}", zorder=3)
-        ends.append([ratio[-1], ratio[-1], d])
-    # end labels: spread apart (in log space) any that would overlap
-    ends.sort()
-    for i in range(1, len(ends)):
-        if np.log10(ends[i][1]) - np.log10(ends[i - 1][1]) < 0.045:
-            ends[i][1] = ends[i - 1][1] * 10 ** 0.045
-    for value, ypos, d in ends:
-        ax1.text(steps[-1] + 0.35, ypos, f"d={d}  {1 / value:.1f}x faster", color="#52514e", va="center", fontsize=8.5)
+        color = D_COLORS.get(d, "#2a78d6")
+        us = [by[(d, s)]["us"] for s in steps]
+        pm = statistics.median(by[(d, s)]["pm_us"] for s in steps)
+        ax1.plot([steps[0], steps[-1]], [pm, pm], ls="--", lw=1.8, color=PM_COLOR, zorder=1)
+        ax1.plot(steps, us, "o-", ms=6, lw=2, color=color, label=f"ours, d = {d}", zorder=3)
+        labels.append([us[-1], us[-1], f"ours d={d}: {us[-1]:.2f} us  ({pm / us[-1]:.1f}x faster)", color])
+        labels.append([pm, pm, f"PyMatching d={d}: {pm:.2f} us", PM_COLOR])
+    ax1.plot([], [], ls="--", lw=1.8, color=PM_COLOR, label="PyMatching (one line per d)")
+    # right-hand labels: spread apart (in log space) any that would overlap
+    labels.sort(key=lambda r: r[0])
+    for i in range(1, len(labels)):
+        if np.log10(labels[i][1]) - np.log10(labels[i - 1][1]) < 0.075:
+            labels[i][1] = labels[i - 1][1] * 10 ** 0.075
+    for y, ypos, text, color in labels:
+        ax1.text(steps[-1] + 0.35, ypos, text, color=color if color == PM_COLOR else "#0b0b0b",
+                 va="center", fontsize=8)
     ax1.set_yscale("log")
-    ax1.set_yticks([0.3, 0.5, 0.7, 1, 1.5, 2, 3, 4])
-    ax1.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:g}x"))
+    ax1.set_yticks([0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50])
+    ax1.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:g}"))
     ax1.minorticks_off()
-    ax1.set_ylabel("time per shot / PyMatching's  (below 1x = faster)")
-    ax1.set_title("C++ sparse blossom vs PyMatching, step by step (1 core)")
-    ax1.set_xlim(steps[0] - 0.4, steps[-1] + 2.6)
+    ax1.set_ylabel("decode time per shot (us, 1 core)")
+    ax1.set_title("C++ sparse blossom, step by step, vs PyMatching")
+    ax1.set_xlim(steps[0] - 0.4, steps[-1] + 5.2)
 
     # right: speedup of each step over the previous one, grouped by distance
     width = 0.8 / len(ds)

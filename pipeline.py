@@ -1159,6 +1159,52 @@ def plot_ablation(rows, out_path="cache_ablation.png"):
     return fig
 
 
+def plot_agreement(ds=(3, 5, 7), ps=(1e-3, 2e-3, 3e-3, 5e-3, 7e-3, 1e-2), shots=200_000,
+                   out_path="agreement.png"):
+    """Logical error rate of our compiled decoder vs PyMatching, decoded on the SAME shots.
+
+    Both decoders see identical detection events at every point, so the curves can only differ
+    where the two predictions differ (exact ties between equal-weight matchings).
+    """
+    colors = {3: "#6da7ec", 5: "#2a78d6", 7: "#1c5cab", 9: "#104281"}
+    fig, ax = plt.subplots(figsize=(7.5, 5))
+    total = disagree = 0
+    for d in ds:
+        ours_ler, pm_ler = [], []
+        for p in ps:
+            circuit = make_circuit(d, p)
+            dem = circuit.detector_error_model(decompose_errors=True)
+            dets, obs = circuit.compile_detector_sampler(seed=int(1e6 * p) + d).sample(
+                shots, separate_observables=True, bit_packed=True)
+            truth = np.unpackbits(obs, axis=1, bitorder="little")[:, 0].astype(bool)
+            ours = (MyCompiledDecoder(dem, method="compiled").decode_masks_compiled(dets) & 1).astype(bool)
+            pm = pymatching.Matching.from_detector_error_model(dem).decode_batch(
+                dets, bit_packed_shots=True)[:, 0].astype(bool)
+            ours_ler.append((ours != truth).mean())
+            pm_ler.append((pm != truth).mean())
+            total += shots
+            disagree += int((ours != pm).sum())
+        c = colors.get(d, "#2a78d6")
+        ax.plot(ps, ours_ler, "o-", color=c, lw=2, ms=6, label=f"ours, d = {d}")
+        ax.plot(ps, pm_ler, "o--", color=c, lw=1.5, ms=12, mfc="none", mew=1.5, label=f"PyMatching, d = {d}")
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("physical error rate p")
+    ax.set_ylabel("logical error rate (per shot)")
+    ax.set_title(f"Same shots, both decoders ({shots:,} shots per point)")
+    ax.text(0.02, 0.97, f"predictions agree on {1 - disagree / total:.4%} of {total:,} shots\n"
+            f"({disagree} differ)", transform=ax.transAxes, va="top", fontsize=9, color="#52514e")
+    ax.grid(True, which="major", color="#e6e5e1", lw=0.8)
+    ax.set_axisbelow(True)
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+    ax.legend(frameon=False, fontsize=8.5, ncol=2, loc="lower right")
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150)
+    print(f"{disagree}/{total} predictions differ; saved plot to {out_path}")
+    return fig
+
+
 if __name__ == "__main__":
     main()
 
