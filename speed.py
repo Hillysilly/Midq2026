@@ -1,7 +1,7 @@
 """Decoder speed vs accuracy: microseconds per shot and logical error rate, per decoder and distance.
 
     python speed.py                              # circuit noise p = 0.3%, d = 3, 5, 7, 9
-    python speed.py --decoders pymatching union_find --distances 3 5 7 9 11
+    python speed.py --decoders pymatching union_find --distances 3 5 7 9
 
 Run it on an otherwise idle machine: timings are single-threaded wall-clock time.
 Outputs go to out/speed/ (plot.png, results.json, summary.txt).

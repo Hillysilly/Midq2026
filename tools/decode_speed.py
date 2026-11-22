@@ -1,6 +1,6 @@
 """Decode-only speed table: µs per shot for each decoder, distance and thread count (markdown output).
 
-    .venv\\Scripts\\python tools\\decode_speed.py --p 0.001 --distances 3 5 7 9 11
+    .venv\\Scripts\\python tools\\decode_speed.py --p 0.001 --distances 3 5 7 9
 
 Shots are sampled once per distance and decoded with `decode_batch` after a warm-up call, so the
 times exclude Stim sampling and numba compilation. Numba decoders are timed on 1 and on all threads;
