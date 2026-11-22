@@ -1,5 +1,5 @@
-  step 00 high noise d=5 p=0.005: agree 99.935% with PyMatching-correlated, errors 628 vs 631 -> ok
-  step 00 high noise d=7 p=0.005: agree 99.880% with PyMatching-correlated, errors 89 vs 87 -> ok
+  step 00 high noise d=5 p=0.005: agree 99.930% with PyMatching-correlated, errors 627 vs 631 -> ok
+  step 00 high noise d=7 p=0.005: agree 99.920% with PyMatching-correlated, errors 87 vs 87 -> ok
   step 00 high noise d=9 p=0.003: agree 100.000% with PyMatching-correlated, errors 0 vs 0 -> ok
   step 01 high noise d=5 p=0.005: agree 99.935% with PyMatching-correlated, errors 628 vs 631 -> ok
   step 01 high noise d=7 p=0.005: agree 99.880% with PyMatching-correlated, errors 89 vs 87 -> ok
@@ -10,28 +10,35 @@
   step 03 high noise d=5 p=0.005: agree 99.935% with PyMatching-correlated, errors 628 vs 631 -> ok
   step 03 high noise d=7 p=0.005: agree 99.880% with PyMatching-correlated, errors 89 vs 87 -> ok
   step 03 high noise d=9 p=0.003: agree 100.000% with PyMatching-correlated, errors 0 vs 0 -> ok
+  step 04 high noise d=5 p=0.005: agree 99.935% with PyMatching-correlated, errors 628 vs 631 -> ok
+  step 04 high noise d=7 p=0.005: agree 99.880% with PyMatching-correlated, errors 89 vs 87 -> ok
+  step 04 high noise d=9 p=0.003: agree 100.000% with PyMatching-correlated, errors 0 vs 0 -> ok
 
-d=3  (200000 shots, 7 rounds)   pymatching 1.496 us/shot
-  step 00 two_pass                        0.645 us/shot    0.43x pymatching        - vs previous   agree 99.9990%
-  step 01 fast_direct_test                0.588 us/shot    0.39x pymatching    1.10x vs previous   agree 99.9990%
-  step 02 skip_pass2_certificate          0.529 us/shot    0.35x pymatching    1.11x vs previous   agree 99.9990%
-  step 03 one_defect_shortcut             0.501 us/shot    0.33x pymatching    1.06x vs previous   agree 99.9990%
+d=3  (200000 shots, 7 rounds)   pymatching 1.211 us/shot
+  step 00 baseline_matcher                2.300 us/shot    1.90x pymatching        - vs previous   agree 99.9990%
+  step 01 two_pass                        0.509 us/shot    0.42x pymatching    4.52x vs previous   agree 99.9990%
+  step 02 fast_direct_test                0.494 us/shot    0.41x pymatching    1.03x vs previous   agree 99.9990%
+  step 03 skip_pass2_certificate          0.463 us/shot    0.38x pymatching    1.07x vs previous   agree 99.9990%
+  step 04 one_defect_shortcut             0.442 us/shot    0.36x pymatching    1.05x vs previous   agree 99.9990%
 
-d=5  (100000 shots, 7 rounds)   pymatching 9.835 us/shot
-  step 00 two_pass                        4.322 us/shot    0.44x pymatching        - vs previous   agree 99.9980%
-  step 01 fast_direct_test                4.404 us/shot    0.45x pymatching    0.98x vs previous   agree 99.9980%
-  step 02 skip_pass2_certificate          4.194 us/shot    0.43x pymatching    1.05x vs previous   agree 99.9980%
-  step 03 one_defect_shortcut             4.283 us/shot    0.44x pymatching    0.98x vs previous   agree 99.9980%
+d=5  (100000 shots, 7 rounds)   pymatching 8.226 us/shot
+  step 00 baseline_matcher               19.984 us/shot    2.43x pymatching        - vs previous   agree 99.9990%
+  step 01 two_pass                        3.757 us/shot    0.46x pymatching    5.32x vs previous   agree 99.9980%
+  step 02 fast_direct_test                3.671 us/shot    0.45x pymatching    1.02x vs previous   agree 99.9980%
+  step 03 skip_pass2_certificate          3.488 us/shot    0.42x pymatching    1.05x vs previous   agree 99.9980%
+  step 04 one_defect_shortcut             3.438 us/shot    0.42x pymatching    1.01x vs previous   agree 99.9980%
 
-d=7  (40000 shots, 7 rounds)   pymatching 31.791 us/shot
-  step 00 two_pass                       13.726 us/shot    0.43x pymatching        - vs previous   agree 100.0000%
-  step 01 fast_direct_test               13.824 us/shot    0.43x pymatching    0.99x vs previous   agree 100.0000%
-  step 02 skip_pass2_certificate         13.556 us/shot    0.43x pymatching    1.02x vs previous   agree 100.0000%
-  step 03 one_defect_shortcut            13.728 us/shot    0.43x pymatching    0.99x vs previous   agree 100.0000%
+d=7  (40000 shots, 7 rounds)   pymatching 24.250 us/shot
+  step 00 baseline_matcher               64.897 us/shot    2.68x pymatching        - vs previous   agree 100.0000%
+  step 01 two_pass                       10.059 us/shot    0.41x pymatching    6.45x vs previous   agree 100.0000%
+  step 02 fast_direct_test               10.326 us/shot    0.43x pymatching    0.97x vs previous   agree 100.0000%
+  step 03 skip_pass2_certificate         10.689 us/shot    0.44x pymatching    0.97x vs previous   agree 100.0000%
+  step 04 one_defect_shortcut            11.045 us/shot    0.46x pymatching    0.97x vs previous   agree 100.0000%
 
-d=9  (20000 shots, 7 rounds)   pymatching 79.442 us/shot
-  step 00 two_pass                       32.143 us/shot    0.40x pymatching        - vs previous   agree 100.0000%
-  step 01 fast_direct_test               31.877 us/shot    0.40x pymatching    1.01x vs previous   agree 100.0000%
-  step 02 skip_pass2_certificate         32.810 us/shot    0.41x pymatching    0.97x vs previous   agree 100.0000%
-  step 03 one_defect_shortcut            32.320 us/shot    0.41x pymatching    1.02x vs previous   agree 100.0000%
-saved plot to C:\Users\alber\Documents\School\Clubs\MidQ2026\correlated_ablation.png
+d=9  (20000 shots, 7 rounds)   pymatching 57.844 us/shot
+  step 00 baseline_matcher              171.674 us/shot    2.97x pymatching        - vs previous   agree 100.0000%
+  step 01 two_pass                       24.450 us/shot    0.42x pymatching    7.02x vs previous   agree 100.0000%
+  step 02 fast_direct_test               24.937 us/shot    0.43x pymatching    0.98x vs previous   agree 100.0000%
+  step 03 skip_pass2_certificate         26.177 us/shot    0.45x pymatching    0.95x vs previous   agree 100.0000%
+  step 04 one_defect_shortcut            24.982 us/shot    0.43x pymatching    1.05x vs previous   agree 100.0000%
+saved plot to c:\Users\alber\Documents\School\Clubs\MidQ2026\correlated_ablation.png

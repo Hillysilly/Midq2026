@@ -12,7 +12,7 @@ measurements of each on its own and combined.
 | Source cache | Dijkstra + networkx | **4.2× faster** (104 → 24.6 ms/shot) | Only as a comparison point. It costs about 75 MB per process, and blossom is still 35× faster. |
 | Compiling to C++ | sparse blossom | **15× faster** (677 → 46.6 µs/shot) | **Yes.** It's now ~4× slower than PyMatching, down from ~60×. See section 4. |
 | Optimizing the C++ (12 steps) | sparse blossom (C++) | **8× faster** (47.8 → 5.98 µs/shot) | **Yes.** Now **1.8–3.1× faster than PyMatching** on one core. See section 5. |
-| Correlated matching (4 steps) | sparse blossom (C++), correlated | 2.3–3.0× faster than PyMatching's correlated mode | **Yes.** Same answers as PyMatching (99.9–100% agreement, matching error rates). See section 6. |
+| Correlated matching (5 steps) | sparse blossom (C++), correlated | **6.9× faster** (172 → 25.0 µs/shot). From 3.0× slower than PyMatching's correlated mode to 2.3× faster | **Yes.** Same answers as PyMatching (99.8–100% agreement, matching error rates). Now 2.2–2.7× faster than PyMatching's correlated mode. See section 6. |
 
 Every variant gave exactly the same prediction as PyMatching on every shot it decoded (100% agreement at
 every distance).
@@ -528,7 +528,12 @@ What the table shows:
 
 ![Logical error rate of ours vs PyMatching, both in correlated mode, on the same shots](correlated_agreement.png)
 
-CORRELATED_AGREEMENT_TEXT
+The same comparison over a noise sweep: 3,600,000 shots (d = 3, 5, 7; p from 0.1% to 1%; 200,000
+shots per point), both decoders in correlated mode on identical shots. The curves lie on top of each
+other at every point; 5,643 predictions (0.16%) differ. That is more than in the plain-matching plot
+above (0.01%) because the sweep goes up to p = 1%, where pass 1 often has ties, and a different tie
+reweights a different set of edges (the table above shows the same trend: 99.999% agreement at
+p = 0.1%, 99.90% at 0.5%).
 
 ### Ablation (µs per shot, one core; in brackets: time as a multiple of PyMatching's correlated mode)
 
@@ -536,29 +541,40 @@ CORRELATED_AGREEMENT_TEXT
 
 | Step | Change | d = 3 | d = 5 | d = 7 | d = 9 |
 |---|---|---|---|---|---|
-| c00 | Two-pass correlated matching on the optimized matcher | 0.645 (0.43×) | 4.32 (0.44×) | 13.7 (0.43×) | 32.1 (0.40×) |
-| c01 | Faster direct-edge test (one scan, precomputed lightest neighbours) | 0.588 (0.39×) | 4.40 (0.45×) | 13.8 (0.43×) | 31.9 (0.40×) |
-| c02 | Skip pass 2 when pass 1's matching provably stays optimal | 0.529 (0.35×) | 4.19 (0.43×) | 13.6 (0.43×) | 32.8 (0.41×) |
-| c03 | One lit detector: both passes are just shortest boundary paths | **0.501 (0.33×)** | **4.28 (0.44×)** | **13.7 (0.43×)** | **32.3 (0.41×)** |
-| | **PyMatching, correlated** | 1.50 | 9.83 | 31.8 | 79.4 |
+| c00 | Two-pass correlated matching on the **original** C++ matcher (step 00 of section 5) | 2.30 (1.90×) | 20.0 (2.43×) | 64.9 (2.68×) | 172 (2.97×) |
+| c01 | The same two passes on the **optimized** matcher (step 12 of section 5) | 0.509 (0.42×) | 3.76 (0.46×) | 10.1 (0.41×) | 24.5 (0.42×) |
+| c02 | Faster direct-edge test (one scan, precomputed lightest neighbours) | 0.494 (0.41×) | 3.67 (0.45×) | 10.3 (0.43×) | 24.9 (0.43×) |
+| c03 | Skip pass 2 when pass 1's matching provably stays optimal | 0.463 (0.38×) | 3.49 (0.42×) | 10.7 (0.44×) | 26.2 (0.45×) |
+| c04 | One lit detector: both passes are just shortest boundary paths | **0.442 (0.36×)** | **3.44 (0.42×)** | **11.0 (0.46×)** | **25.0 (0.43×)** |
+| | **PyMatching, correlated** | 1.21 | 8.23 | 24.3 | 57.8 |
 
-**Result: 2.3–3.0× faster than PyMatching's correlated mode.** Almost all of that comes from step
-c00: both passes run on the fast matcher from section 5. The correlation-specific steps help only at
-d = 3, a combined 1.29×. At d = 5–9 they're within the ±5% timing noise.
+**Result: from 1.9–3.0× slower than PyMatching's correlated mode to 2.2–2.7× faster.**
 
-This run happened while the laptop was in a slower power state: PyMatching's plain mode measured
-about 2.5× slower than in section 5. The ratios are measured in the same rounds and remain valid, but
-compare absolute times only within this table.
+- **The starting point (c00) is slower than PyMatching**, and more so at larger d (1.9× at d = 3,
+  3.0× at d = 9). That's the plain C++ port from section 4 doing two matchings per shot, plus the
+  correlated bookkeeping.
+- **Almost the whole gain is step c01**: 4.5× at d = 3 up to 7.0× at d = 9. It swaps in the
+  optimized matcher from section 5; the correlated layer is the same code. Correlated decoding is
+  mostly two matchings, so it inherits the matcher's speedup.
+- **The correlation-specific steps (c02–c04) help little**: about 1.15× combined at d = 3, and within
+  the ±5% timing noise at d = 5–9. At d = 7 they drift 3% slower per step; the previous run of the
+  same steps was flat at d = 7 (13.7 → 13.7 µs), so that's treated as noise.
+
+Machine state: this run was faster than the first correlated run (PyMatching's correlated mode
+measured 57.8 µs at d = 9 here versus 79.4 µs before). The ratios are measured in the same rounds and
+stay valid, but compare absolute times only within one table.
 
 How the steps were checked:
 - Every step was checked at high noise against PyMatching's correlated mode: 99.88–100% agreement,
   with matching error counts.
-- Steps c02 and c03 gave **identical predictions** to the previous step on 740,000–750,000 shots
+- c00 and c01 run the same correlated layer on different matchers. They differed on 2 of 75,000
+  shots, which are ties between equal-weight matchings.
+- Steps c03 and c04 gave **identical predictions** to the previous step on 740,000–750,000 shots
   (d = 3–9, p = 0.1–0.5%).
 
 ### Why the correlation-specific steps don't buy much
 
-Profile of step c00 at d = 9:
+Profile of step c01 at d = 9:
 
 | Part | Share of time |
 |---|---|
@@ -571,9 +587,9 @@ Profile of step c00 at d = 9:
 Our correlated decode costs about 2.4–2.5× a plain decode. That's close to the floor of "two
 matchings plus a bit"; PyMatching's correlated mode costs 2.5–3.5× its own plain mode.
 
-- **c01:** the path walks were already cheap (98–99% use a single edge), so making the test faster
+- **c02:** the path walks were already cheap (98–99% use a single edge), so making the test faster
   changed nothing measurable.
-- **c02:** this is the only way to avoid a whole pass. At the end of pass 1, the regions are an
+- **c03:** this is the only way to avoid a whole pass. At the end of pass 1, the regions are an
   optimal solution. If every reweighted edge still respects them, the old matching stays optimal
   for the new weights, and pass 2 can be skipped. Precisely:
   - endpoints in different regions (or uncovered): `local(a) + local(b) ≤ w'`
@@ -586,6 +602,43 @@ matchings plus a bit"; PyMatching's correlated mode costs 2.5–3.5× its own pl
   shots at d = 3, 5 and 9.
 - **Pass 2 almost never changes the answer** at low p, but it does change the regions, so a test
   based on pass 1's regions can't tell that in advance at d = 9.
+
+## 7. All decoders side by side
+
+![Accuracy and speed of every decoder, d = 3 to 9](decoder_comparison_d3-9.png)
+
+(`decoder_comparison.png` is the same plot for d = 3 and 5 only.)
+
+**Accuracy** (left), sampled by sinter at p = 0.1%: up to 1,000,000 shots or 100 errors per point
+for the C++ decoders and PyMatching. Logical error rate per round:
+
+| d | ours, C++ | PyMatching | ours, C++ correlated | PyMatching, correlated |
+|---|---|---|---|---|
+| 3 | 2.8×10⁻⁴ | 2.1×10⁻⁴ | 4.4×10⁻⁴ | 4.3×10⁻⁴ |
+| 5 | 3.0×10⁻⁵ | 3.3×10⁻⁵ | 2.0×10⁻⁵ | 1.8×10⁻⁵ |
+| 7 | 2.2×10⁻⁶ | 2.7×10⁻⁶ | 9.1×10⁻⁷ | 7.6×10⁻⁷ |
+| 9 | 3.7×10⁻⁷ (10 errors) | 1.9×10⁻⁷ (5 errors) | 7.4×10⁻⁸ (2 errors) | 7.4×10⁻⁸ (2 errors) |
+
+- Each decoder samples its own shots here, so ours and PyMatching differ by sampling noise only;
+  every pair's intervals overlap. The same-shot plots (`agreement.png`, `correlated_agreement.png`)
+  are the sharper test.
+- The correlated rule is worse at d = 3 and better from d = 5 up, for both implementations.
+- The Python decoders are left out of this panel. They only get 2,000 shots (a d = 9 shot takes
+  ~0.4 s with networkx), which gives intervals spanning orders of magnitude. On the 1,000 timing
+  shots they agreed with PyMatching on 100% of shots.
+
+**Speed** (right): 1,000 identical shots per distance, one core, median of 7 runs (1 run for the
+Python decoders), after an untimed warm-up call. µs per shot:
+
+| d | networkx | Python blossom | ours, C++ | PyMatching | ours, C++ correlated | PyMatching, correlated |
+|---|---|---|---|---|---|---|
+| 3 | 177 | 34.8 | 0.17 | 0.55 | 0.35 | 0.97 |
+| 5 | 5,260 | 405 | 2.85 | 4.77 | 5.71 | 13.7 |
+| 7 | 56,100 | 1,020 | 8.73 | 16.2 | 19.7 | 43.7 |
+| 9 | 383,000 | 2,270 | 18.0 | 35.7 | 43.5 | 102 |
+
+This is a quick measurement (not pinned to a core, 1,000 shots); the C++/PyMatching ratios moved by
+up to ±0.1 between runs. The ablation tables in sections 5 and 6 are the careful numbers.
 
 ## Possible next steps
 
@@ -617,3 +670,18 @@ batch, and the median of three runs of the blossom variants and PyMatching with 
 The variants are defined in `pipeline.ABLATION_VARIANTS`, and each optimization is a switch on
 `MyCompiledDecoder(dem, method=..., direct_edge=..., pair_cache=..., source_cache=...)`.
 Defaults: `direct_edge=True`, `pair_cache=False`, `source_cache=False`, following the takeaways above.
+
+The other plots:
+
+```python
+import pipeline
+stats = pipeline.run_sinter_benchmark(drange=[3, 5, 7, 9])                # all six decoders
+pipeline.compare_decoders(stats, out_path="decoder_comparison_d3-9.png")  # accuracy + speed
+pipeline.plot_agreement()                                                 # agreement.png
+pipeline.plot_agreement(correlated=True)                                  # correlated_agreement.png
+```
+
+```
+python compiled_ablation.py                  # C++ ablation -> compiled_ablation.png
+python compiled_ablation.py --correlated     # correlated ablation -> correlated_ablation.png
+```

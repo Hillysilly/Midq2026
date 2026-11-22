@@ -969,7 +969,9 @@ def make_circuit(d, noise):
 
 
 def run_sinter_benchmark(mydecfn=None, noise=1e-3, drange=[3, 5, 7, 9],
-                         max_shots=2_000, max_errors=100):
+                         max_shots=2_000, max_errors=100, fast_max_shots=1_000_000):
+    """Sample logical error rates with sinter. The Python decoders get max_shots; the fast ones
+    (C++ and PyMatching) get fast_max_shots, so their error rates have usable error bars."""
     if mydecfn is None:
         mydecfn = MyDecoder()
     surface_code_tasks = [
@@ -979,20 +981,24 @@ def run_sinter_benchmark(mydecfn=None, noise=1e-3, drange=[3, 5, 7, 9],
         )
         for d in drange
     ]
+    custom = {"mine": mydecfn, "mine_blossom": MyDecoder(method="blossom"),
+              "mine_compiled": MyDecoder(method="compiled"),
+              "mine_compiled_corr": MyDecoder(method="compiled", correlated=True),
+              "pymatching_corr": PyMatchingCorrelated()}
 
-    collected_surface_code_stats: List[sinter.TaskStats] = sinter.collect(
-        num_workers=os.cpu_count(),
-        tasks=surface_code_tasks,
-        decoders=["mine", "mine_blossom", "mine_compiled", "mine_compiled_corr",   # names to run
-                  "pymatching", "pymatching_corr"],
-        custom_decoders={"mine": mydecfn, "mine_blossom": MyDecoder(method="blossom"),
-                         "mine_compiled": MyDecoder(method="compiled"),
-                         "mine_compiled_corr": MyDecoder(method="compiled", correlated=True),
-                         "pymatching_corr": PyMatchingCorrelated()},
-        max_shots=max_shots,
-        max_errors=max_errors,
-        print_progress=False,
-    )
+    collected_surface_code_stats: List[sinter.TaskStats] = []
+    for decoders, shots in ((["mine", "mine_blossom"], max_shots),
+                            (["mine_compiled", "mine_compiled_corr", "pymatching", "pymatching_corr"],
+                             fast_max_shots)):
+        collected_surface_code_stats += sinter.collect(
+            num_workers=os.cpu_count(),
+            tasks=surface_code_tasks,
+            decoders=decoders,
+            custom_decoders=custom,
+            max_shots=shots,
+            max_errors=max_errors,
+            print_progress=False,
+        )
     return collected_surface_code_stats
 
 
@@ -1041,12 +1047,14 @@ def _reference(name):
     return "pymatching_corr" if DECODER_STYLE[name][4].get("correlated") else "pymatching"
 
 
-def compare_decoders(collected_surface_code_stats, timing_shots=1_000,
-                     out_path="decoder_comparison.png"):
+def compare_decoders(collected_surface_code_stats, timing_shots=1_000, timing_repeats=7,
+                     out_path="decoder_comparison.png", min_plot_shots=10_000):
     """Summary table + plots: mine (every matching method) vs pymatching.
 
     Accuracy comes from the sinter stats (binomial intervals at likelihood ratio 1000,
-    i.e. wider than 95%, converted to per-round rates). Timing re-decodes the *same*
+    i.e. wider than 95%, converted to per-round rates); the accuracy panel leaves out decoders
+    with fewer than min_plot_shots shots (the slow Python ones), whose error bars say nothing;
+    their predictions are compared with pymatching's on the timing shots instead. Timing re-decodes the *same*
     freshly sampled shots with every decoder on one core, so it measures decoding only
     (no sampling, no worker overhead), and reports how often each of ours agrees with
     pymatching on those shots (correlated variants against pymatching's correlated mode).
@@ -1079,19 +1087,23 @@ def compare_decoders(collected_surface_code_stats, timing_shots=1_000,
         dem = circuit.detector_error_model(decompose_errors=True)
         dets, _ = circuit.compile_detector_sampler(seed=d).sample(
             timing_shots, separate_observables=True, bit_packed=True)
-        compiled = {n: MyCompiledDecoder(dem, **DECODER_STYLE[n][4]) for n in ours}
-
-        preds = {}
-        for name, dec in compiled.items():
-            t0 = time.perf_counter()
-            preds[name] = dec.decode_shots_bit_packed(bit_packed_detection_event_data=dets)
-            times[name].append((time.perf_counter() - t0) / timing_shots * 1e6)
+        decode = {n: MyCompiledDecoder(dem, **DECODER_STYLE[n][4]).decode_shots_bit_packed for n in ours}
         for name, corr in (("pymatching", False), ("pymatching_corr", True)):
             pm = pymatching.Matching.from_detector_error_model(dem, enable_correlations=corr)
-            t0 = time.perf_counter()
-            preds[name] = pm.decode_batch(dets, bit_packed_shots=True, bit_packed_predictions=True,
-                                          enable_correlations=corr)
-            times[name].append((time.perf_counter() - t0) / timing_shots * 1e6)
+            decode[name] = (lambda pm, corr: lambda bit_packed_detection_event_data: pm.decode_batch(
+                bit_packed_detection_event_data, bit_packed_shots=True, bit_packed_predictions=True,
+                enable_correlations=corr))(pm, corr)
+
+        preds = {}
+        for name, fn in decode.items():
+            fn(bit_packed_detection_event_data=dets[:20])      # warm-up: first-call setup is not timed
+            slow = name in ("mine", "mine_blossom")
+            runs = []
+            for _ in range(1 if slow else timing_repeats):     # median of several runs for the fast ones
+                t0 = time.perf_counter()
+                preds[name] = fn(bit_packed_detection_event_data=dets)
+                runs.append((time.perf_counter() - t0) / timing_shots * 1e6)
+            times[name].append(float(np.median(runs)))
 
         events = np.unpackbits(dets, axis=1, bitorder="little")[:, :dem.num_detectors].sum(1).mean()
         agree = {n: np.all(preds[n] == preds[_reference(n)], axis=1).mean() for n in ours}
@@ -1101,9 +1113,11 @@ def compare_decoders(collected_surface_code_stats, timing_shots=1_000,
 
     # --- plots ---
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5.2))
-    for k, dec in enumerate(decoders):
+    plotted = [dec for dec in decoders
+               if all(by_key[(d, dec)].shots >= min_plot_shots for d in ds if (d, dec) in by_key)]
+    for k, dec in enumerate(plotted):
         label, color, marker, ls, _ = DECODER_STYLE[dec]
-        offset = (k - (len(decoders) - 1) / 2) * 0.1
+        offset = (k - (len(plotted) - 1) / 2) * 0.1
         seen = [(d, *ler[(d, dec)]) for d in ds if (d, dec) in ler and ler[(d, dec)][1] > 0]
         unseen = [(d, ler[(d, dec)][2]) for d in ds if (d, dec) in ler and ler[(d, dec)][1] == 0]
         if seen:
@@ -1114,32 +1128,44 @@ def compare_decoders(collected_surface_code_stats, timing_shots=1_000,
             x, hi = map(np.array, zip(*unseen))
             ax1.plot(x + offset, hi, "v", ms=9, mfc="none", mew=2, color=color,
                      label=None if seen else label)
-    ax1.plot([], [], "v", ms=9, mfc="none", mew=2, color="#52514e", label="0 errors seen (upper bound)")
+    if any(ler[(d, dec)][1] == 0 for d in ds for dec in plotted if (d, dec) in ler):
+        ax1.plot([], [], "v", ms=9, mfc="none", mew=2, color="#52514e", label="0 errors seen (upper bound)")
     ax1.set_yscale("log")
     ax1.set_ylabel("logical error rate per round")
-    ax1.set_title("Accuracy (bars = likelihood interval)")
+    ax1.set_title(f"Accuracy (bars = likelihood interval; up to {max(s.shots for s in collected_surface_code_stats):,}"
+                  " shots per point)\nPython decoders not shown: too few shots for useful bars", fontsize=10)
 
     for name, (label, color, marker, ls, _) in DECODER_STYLE.items():
         ax2.plot(ds, times[name], marker=marker, ls=ls, ms=7, lw=2, color=color, label=label)
     for name in ours:
-        below = DECODER_STYLE[name][4].get("correlated", False)   # keep the two C++ labels apart
+        opts = DECODER_STYLE[name][4]
+        if opts["method"] != "compiled":
+            pos = dict(xytext=(0, 7), ha="center", va="bottom")
+        elif opts.get("correlated"):   # the C++ lines run close to pymatching's: left / below-right
+            pos = dict(xytext=(-8, 2), ha="right", va="bottom")
+        else:
+            pos = dict(xytext=(7, -7), ha="left", va="top")
         for d, a, b in zip(ds, times[name], times[_reference(name)]):
-            ax2.annotate(f"{a / b:.0f}x" if a / b >= 10 else f"{a / b:.1f}x", (d, a), textcoords="offset points",
-                         xytext=(0, -13 if below else 7), ha="center", fontsize=9, color="#52514e")
+            r = a / b
+            ax2.annotate(f"{r:.0f}x" if r >= 10 else (f"{r:.1f}x" if r >= 1 else f"{r:.2f}x"), (d, a),
+                         textcoords="offset points", fontsize=8.5, color="#52514e", **pos)
     ax2.set_yscale("log")
+    all_t = [t for ts in times.values() for t in ts]
+    ax2.set_ylim(min(all_t) / 3, max(all_t) * 3)   # room for the labels at both ends
     ax2.set_ylabel("decode time per shot (us, 1 core)")
-    ax2.set_title(f"Speed ({timing_shots} identical shots)\nlabels = time / pymatching's (correlated vs correlated)",
-                  fontsize=10)
+    ax2.set_title(f"Speed ({timing_shots} identical shots, median of {timing_repeats} runs)\n"
+                  "labels = time / pymatching's (correlated vs pymatching correlated)", fontsize=10)
 
     for ax in (ax1, ax2):
         ax.set_xticks(ds)
         ax.set_xlabel("code distance d")
-        ax.set_xlim(min(ds) - 0.6, max(ds) + 0.6)
+        ax.set_xlim(min(ds) - 0.6, max(ds) + (0.9 if ax is ax2 else 0.6))   # room for right-hand labels
         ax.grid(True, which="major", color="#e6e5e1", lw=0.8)
         ax.set_axisbelow(True)
         for side in ("top", "right"):
             ax.spines[side].set_visible(False)
-    ax1.legend(frameon=False, fontsize=8.5)
+    ax1.legend(frameon=False, fontsize=8.5, loc="lower left")
+    ax2.legend(frameon=False, fontsize=8.5, loc="upper left")
     fig.tight_layout()
     fig.savefig(out_path, dpi=150)
     print(f"\nsaved plot to {out_path}")

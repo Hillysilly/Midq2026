@@ -180,7 +180,8 @@ STEP_LABELS = {   # short x-axis labels for the plot
     9: "no division", 10: "radix heap", 11: "flat pair_obs", 12: "threads API",
 }
 CORR_STEP_LABELS = {   # correlated-matching steps (blossom_steps/correlated/)
-    0: "two-pass port", 1: "fast direct-edge test", 2: "skip pass 2 (certificate)", 3: "1-defect shortcut",
+    0: "two-pass on original matcher", 1: "on optimized matcher", 2: "fast direct-edge test",
+    3: "skip pass 2 (certificate)", 4: "1-defect shortcut",
 }
 D_COLORS = {3: "#6da7ec", 5: "#2a78d6", 7: "#1c5cab", 9: "#104281"}   # light -> dark = small -> large d
 PM_COLOR = "#eb6834"
@@ -217,18 +218,20 @@ def plot_ablation(results_path=None, out_path=None):
     # right-hand labels: spread apart (in log space) any that would overlap
     labels.sort(key=lambda r: r[0])
     for i in range(1, len(labels)):
-        if np.log10(labels[i][1]) - np.log10(labels[i - 1][1]) < 0.075:
-            labels[i][1] = labels[i - 1][1] * 10 ** 0.075
+        if np.log10(labels[i][1]) - np.log10(labels[i - 1][1]) < 0.085:
+            labels[i][1] = labels[i - 1][1] * 10 ** 0.085
     for y, ypos, text, color in labels:
         ax1.text(steps[-1] + 0.35, ypos, text, color=color if color == PM_COLOR else "#0b0b0b",
                  va="center", fontsize=8)
     ax1.set_yscale("log")
-    ax1.set_yticks([0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50])
+    vals = [r["us"] for r in rows] + [r["pm_us"] for r in rows]
+    ax1.set_yticks([t for t in (0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500)
+                    if min(vals) / 2 <= t <= max(vals) * 1.5])
     ax1.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:g}"))
     ax1.minorticks_off()
     ax1.set_ylabel("decode time per shot (us, 1 core)")
     ax1.set_title(("Correlated" if CORRELATED else "C++") + f" sparse blossom, step by step, vs {ref_name}")
-    ax1.set_xlim(steps[0] - 0.4, steps[-1] + 5.2)
+    ax1.set_xlim(steps[0] - 0.4, steps[-1] + 1.2 + 0.4 * (steps[-1] - steps[0]))   # room for the end labels
 
     # right: speedup of each step over the previous one, grouped by distance
     width = 0.8 / len(ds)
@@ -253,7 +256,10 @@ def plot_ablation(results_path=None, out_path=None):
         ax.set_axisbelow(True)
         for side in ("top", "right"):
             ax.spines[side].set_visible(False)
-        ax.legend(frameon=False, fontsize=9, loc="lower left" if (CORRELATED and ax is ax1) else "upper right")
+        if CORRELATED and ax is ax1:   # few steps: the empty band above the lines
+            ax.legend(frameon=False, fontsize=9, loc="upper center", ncol=2)
+        else:
+            ax.legend(frameon=False, fontsize=9, loc="upper right")
     fig.tight_layout()
     fig.savefig(out_path, dpi=150)
     print(f"saved plot to {out_path}")
