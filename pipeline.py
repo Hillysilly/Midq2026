@@ -983,9 +983,12 @@ def run_sinter_benchmark(mydecfn=None, noise=1e-3, drange=[3, 5, 7, 9],
     collected_surface_code_stats: List[sinter.TaskStats] = sinter.collect(
         num_workers=os.cpu_count(),
         tasks=surface_code_tasks,
-        decoders=["mine", "mine_blossom", "mine_compiled", "pymatching"],          # names to run
+        decoders=["mine", "mine_blossom", "mine_compiled", "mine_compiled_corr",   # names to run
+                  "pymatching", "pymatching_corr"],
         custom_decoders={"mine": mydecfn, "mine_blossom": MyDecoder(method="blossom"),
-                         "mine_compiled": MyDecoder(method="compiled")},
+                         "mine_compiled": MyDecoder(method="compiled"),
+                         "mine_compiled_corr": MyDecoder(method="compiled", correlated=True),
+                         "pymatching_corr": PyMatchingCorrelated()},
         max_shots=max_shots,
         max_errors=max_errors,
         print_progress=False,
@@ -1005,14 +1008,37 @@ def analyze_surface_code_stats(collected_surface_code_stats):
         print(f"[{stats.decoder}] d:{d}, shots {stats.shots}, errors {stats.errors}, per round {per_round:.3e}")
 
 
-# name: (label, color, marker, linestyle, MyCompiledDecoder method or None for pymatching).
-# Colour = algorithm family, so the Python and C++ sparse blossom share green.
+class PyMatchingCorrelated(sinter.Decoder):
+    """PyMatching with enable_correlations=True, as a sinter decoder."""
+    def compile_decoder_for_dem(self, *, dem: stim.DetectorErrorModel) -> sinter.CompiledDecoder:
+        return _PyMatchingCorrelatedCompiled(dem)
+
+
+class _PyMatchingCorrelatedCompiled(sinter.CompiledDecoder):
+    def __init__(self, dem):
+        self.pm = pymatching.Matching.from_detector_error_model(dem, enable_correlations=True)
+
+    def decode_shots_bit_packed(self, *, bit_packed_detection_event_data: np.ndarray) -> np.ndarray:
+        return self.pm.decode_batch(bit_packed_detection_event_data, bit_packed_shots=True,
+                                    bit_packed_predictions=True, enable_correlations=True)
+
+
+# name: (label, color, marker, linestyle, MyCompiledDecoder options, or None for pymatching).
+# Colour = algorithm family, so the Python and C++ sparse blossom share green; dotted = correlated.
 DECODER_STYLE = {
-    "mine":          ("mine (Dijkstra + networkx)",    "#2a78d6", "o", "-",  "apsp"),
-    "mine_blossom":  ("mine (sparse blossom, Python)", "#1baf7a", "D", "--", "blossom"),
-    "mine_compiled": ("mine (sparse blossom, C++)",    "#1baf7a", "P", "-",  "compiled"),
-    "pymatching":    ("pymatching",                    "#eb6834", "s", "-",  None),
+    "mine":               ("mine (Dijkstra + networkx)",    "#2a78d6", "o", "-",  dict(method="apsp")),
+    "mine_blossom":       ("mine (sparse blossom, Python)", "#1baf7a", "D", "--", dict(method="blossom")),
+    "mine_compiled":      ("mine (sparse blossom, C++)",    "#1baf7a", "P", "-",  dict(method="compiled")),
+    "mine_compiled_corr": ("mine (C++, correlated)",        "#1baf7a", "X", ":",
+                           dict(method="compiled", correlated=True)),
+    "pymatching":         ("pymatching",                    "#eb6834", "s", "-",  None),
+    "pymatching_corr":    ("pymatching (correlated)",       "#eb6834", "^", ":",  None),
 }
+
+
+def _reference(name):
+    """The pymatching variant a decoder of ours is compared against."""
+    return "pymatching_corr" if DECODER_STYLE[name][4].get("correlated") else "pymatching"
 
 
 def compare_decoders(collected_surface_code_stats, timing_shots=1_000,
@@ -1023,7 +1049,7 @@ def compare_decoders(collected_surface_code_stats, timing_shots=1_000,
     i.e. wider than 95%, converted to per-round rates). Timing re-decodes the *same*
     freshly sampled shots with every decoder on one core, so it measures decoding only
     (no sampling, no worker overhead), and reports how often each of ours agrees with
-    pymatching on those shots.
+    pymatching on those shots (correlated variants against pymatching's correlated mode).
     """
     by_key = {(s.json_metadata['d'], s.decoder): s for s in collected_surface_code_stats}
     ds = sorted({d for d, _ in by_key})
@@ -1047,35 +1073,37 @@ def compare_decoders(collected_surface_code_stats, timing_shots=1_000,
     ours = [n for n, st in DECODER_STYLE.items() if st[4] is not None]
     times = {name: [] for name in DECODER_STYLE}
     print(f"\n{'d':>3} {'events/shot':>11} " + " ".join(f"{n + ' us':>18}" for n in DECODER_STYLE)
-          + "   x slower than pymatching / agreement with it")
+          + "   time / pymatching's, agreement with it")
     for d in ds:
         circuit = make_circuit(d, by_key[(d, decoders[0])].json_metadata['p'])
         dem = circuit.detector_error_model(decompose_errors=True)
         dets, _ = circuit.compile_detector_sampler(seed=d).sample(
             timing_shots, separate_observables=True, bit_packed=True)
-        compiled = {n: MyCompiledDecoder(dem, method=DECODER_STYLE[n][4]) for n in ours}
-        pm = pymatching.Matching.from_detector_error_model(dem)
+        compiled = {n: MyCompiledDecoder(dem, **DECODER_STYLE[n][4]) for n in ours}
 
         preds = {}
         for name, dec in compiled.items():
             t0 = time.perf_counter()
             preds[name] = dec.decode_shots_bit_packed(bit_packed_detection_event_data=dets)
             times[name].append((time.perf_counter() - t0) / timing_shots * 1e6)
-        t0 = time.perf_counter()
-        preds["pymatching"] = pm.decode_batch(dets, bit_packed_shots=True, bit_packed_predictions=True)
-        times["pymatching"].append((time.perf_counter() - t0) / timing_shots * 1e6)
+        for name, corr in (("pymatching", False), ("pymatching_corr", True)):
+            pm = pymatching.Matching.from_detector_error_model(dem, enable_correlations=corr)
+            t0 = time.perf_counter()
+            preds[name] = pm.decode_batch(dets, bit_packed_shots=True, bit_packed_predictions=True,
+                                          enable_correlations=corr)
+            times[name].append((time.perf_counter() - t0) / timing_shots * 1e6)
 
         events = np.unpackbits(dets, axis=1, bitorder="little")[:, :dem.num_detectors].sum(1).mean()
-        agree = {n: np.all(preds[n] == preds["pymatching"], axis=1).mean() for n in ours}
-        t_pm = times["pymatching"][-1]
+        agree = {n: np.all(preds[n] == preds[_reference(n)], axis=1).mean() for n in ours}
         print(f"{d:>3} {events:>11.1f} " + " ".join(f"{times[n][-1]:>18.2f}" for n in DECODER_STYLE) + "   "
-              + "  ".join(f"{n}: {times[n][-1] / t_pm:.1f}x/{agree[n]:.1%}" for n in ours))
+              + "  ".join(f"{n}: {times[n][-1] / times[_reference(n)][-1]:.2f}x/{agree[n]:.2%}"
+                          for n in ours))
 
     # --- plots ---
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4.6))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5.2))
     for k, dec in enumerate(decoders):
         label, color, marker, ls, _ = DECODER_STYLE[dec]
-        offset = (k - (len(decoders) - 1) / 2) * 0.14
+        offset = (k - (len(decoders) - 1) / 2) * 0.1
         seen = [(d, *ler[(d, dec)]) for d in ds if (d, dec) in ler and ler[(d, dec)][1] > 0]
         unseen = [(d, ler[(d, dec)][2]) for d in ds if (d, dec) in ler and ler[(d, dec)][1] == 0]
         if seen:
@@ -1094,12 +1122,14 @@ def compare_decoders(collected_surface_code_stats, timing_shots=1_000,
     for name, (label, color, marker, ls, _) in DECODER_STYLE.items():
         ax2.plot(ds, times[name], marker=marker, ls=ls, ms=7, lw=2, color=color, label=label)
     for name in ours:
-        for d, a, b in zip(ds, times[name], times["pymatching"]):
+        below = DECODER_STYLE[name][4].get("correlated", False)   # keep the two C++ labels apart
+        for d, a, b in zip(ds, times[name], times[_reference(name)]):
             ax2.annotate(f"{a / b:.0f}x" if a / b >= 10 else f"{a / b:.1f}x", (d, a), textcoords="offset points",
-                         xytext=(0, 7), ha="center", fontsize=9, color="#52514e")
+                         xytext=(0, -13 if below else 7), ha="center", fontsize=9, color="#52514e")
     ax2.set_yscale("log")
     ax2.set_ylabel("decode time per shot (us, 1 core)")
-    ax2.set_title(f"Speed ({timing_shots} identical shots; labels = x slower than pymatching)")
+    ax2.set_title(f"Speed ({timing_shots} identical shots)\nlabels = time / pymatching's (correlated vs correlated)",
+                  fontsize=10)
 
     for ax in (ax1, ax2):
         ax.set_xticks(ds)
@@ -1109,7 +1139,7 @@ def compare_decoders(collected_surface_code_stats, timing_shots=1_000,
         ax.set_axisbelow(True)
         for side in ("top", "right"):
             ax.spines[side].set_visible(False)
-        ax.legend(frameon=False, fontsize=9)
+    ax1.legend(frameon=False, fontsize=8.5)
     fig.tight_layout()
     fig.savefig(out_path, dpi=150)
     print(f"\nsaved plot to {out_path}")
@@ -1235,12 +1265,17 @@ def plot_ablation(rows, out_path="cache_ablation.png"):
 
 
 def plot_agreement(ds=(3, 5, 7), ps=(1e-3, 2e-3, 3e-3, 5e-3, 7e-3, 1e-2), shots=200_000,
-                   out_path="agreement.png"):
+                   out_path=None, correlated=False):
     """Logical error rate of our compiled decoder vs PyMatching, decoded on the SAME shots.
 
     Both decoders see identical detection events at every point, so the curves can only differ
-    where the two predictions differ (exact ties between equal-weight matchings).
+    where the two predictions differ (ties between equal-weight matchings). correlated=True
+    compares both decoders' correlated modes (saved to correlated_agreement.png).
     """
+    if out_path is None:
+        out_path = "correlated_agreement.png" if correlated else "agreement.png"
+    mode = " (correlated)" if correlated else ""
+
     colors = {3: "#6da7ec", 5: "#2a78d6", 7: "#1c5cab", 9: "#104281"}
     fig, ax = plt.subplots(figsize=(7.5, 5))
     total = disagree = 0
@@ -1252,21 +1287,22 @@ def plot_agreement(ds=(3, 5, 7), ps=(1e-3, 2e-3, 3e-3, 5e-3, 7e-3, 1e-2), shots=
             dets, obs = circuit.compile_detector_sampler(seed=int(1e6 * p) + d).sample(
                 shots, separate_observables=True, bit_packed=True)
             truth = np.unpackbits(obs, axis=1, bitorder="little")[:, 0].astype(bool)
-            ours = (MyCompiledDecoder(dem, method="compiled").decode_masks_compiled(dets) & 1).astype(bool)
-            pm = pymatching.Matching.from_detector_error_model(dem).decode_batch(
-                dets, bit_packed_shots=True)[:, 0].astype(bool)
+            ours = (MyCompiledDecoder(dem, method="compiled", correlated=correlated)
+                    .decode_masks_compiled(dets) & 1).astype(bool)
+            pm = pymatching.Matching.from_detector_error_model(dem, enable_correlations=correlated).decode_batch(
+                dets, bit_packed_shots=True, enable_correlations=correlated)[:, 0].astype(bool)
             ours_ler.append((ours != truth).mean())
             pm_ler.append((pm != truth).mean())
             total += shots
             disagree += int((ours != pm).sum())
         c = colors.get(d, "#2a78d6")
-        ax.plot(ps, ours_ler, "o-", color=c, lw=2, ms=6, label=f"ours, d = {d}")
-        ax.plot(ps, pm_ler, "o--", color=c, lw=1.5, ms=12, mfc="none", mew=1.5, label=f"PyMatching, d = {d}")
+        ax.plot(ps, ours_ler, "o-", color=c, lw=2, ms=6, label=f"ours{mode}, d = {d}")
+        ax.plot(ps, pm_ler, "o--", color=c, lw=1.5, ms=12, mfc="none", mew=1.5, label=f"PyMatching{mode}, d = {d}")
     ax.set_xscale("log")
     ax.set_yscale("log")
     ax.set_xlabel("physical error rate p")
     ax.set_ylabel("logical error rate (per shot)")
-    ax.set_title(f"Same shots, both decoders ({shots:,} shots per point)")
+    ax.set_title(f"Same shots, both decoders{mode} ({shots:,} shots per point)")
     ax.text(0.02, 0.97, f"predictions agree on {1 - disagree / total:.4%} of {total:,} shots\n"
             f"({disagree} differ)", transform=ax.transAxes, va="top", fontsize=9, color="#52514e")
     ax.grid(True, which="major", color="#e6e5e1", lw=0.8)

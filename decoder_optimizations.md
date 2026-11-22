@@ -467,6 +467,12 @@ per-shot state; the graph is only ever read. Not pinned to a core, median of 3 r
   choices between near-ties.
 - The threaded path matched the single-threaded path on every shot.
 
+![Logical error rate of ours vs PyMatching on the same shots: the curves lie on top of each other](agreement.png)
+
+The same check, as a plot: 3,600,000 shots (d = 3, 5, 7 and six noise levels, 200,000 shots per
+point), both decoders on identical shots. The two sets of curves lie on top of each other; 366
+predictions (0.01%) differ.
+
 ## 6. Correlated matching (branch `correlated-blossom`)
 
 ### What it is
@@ -519,6 +525,10 @@ What the table shows:
   weight levels changed nothing. They come from pass 1 choosing between equally short paths:
   PyMatching traces paths from the collision point through its own search structure, we run our
   own shortest-path search, and when two paths tie, a different set of edges gets reweighted.
+
+![Logical error rate of ours vs PyMatching, both in correlated mode, on the same shots](correlated_agreement.png)
+
+CORRELATED_AGREEMENT_TEXT
 
 ### Ablation (µs per shot, one core; in brackets: time as a multiple of PyMatching's correlated mode)
 
