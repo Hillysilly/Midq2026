@@ -1,0 +1,99 @@
+  step 00 high noise d=5 p=0.012: 3/3000 disagree, worst weight gap 6.9e-09 -> all ties (within weight rounding)
+  step 00 high noise d=7 p=0.012: 0/1000 disagree, worst weight gap 0.0e+00 -> all ties (within weight rounding)
+  step 00 high noise d=9 p=0.008: 0/400 disagree, worst weight gap 0.0e+00 -> all ties (within weight rounding)
+  step 01 high noise d=5 p=0.012: 4/3000 disagree, worst weight gap 6.9e-09 -> all ties (within weight rounding)
+  step 01 high noise d=7 p=0.012: 0/1000 disagree, worst weight gap 0.0e+00 -> all ties (within weight rounding)
+  step 01 high noise d=9 p=0.008: 0/400 disagree, worst weight gap 0.0e+00 -> all ties (within weight rounding)
+  step 02 high noise d=5 p=0.012: 4/3000 disagree, worst weight gap 6.9e-09 -> all ties (within weight rounding)
+  step 02 high noise d=7 p=0.012: 0/1000 disagree, worst weight gap 0.0e+00 -> all ties (within weight rounding)
+  step 02 high noise d=9 p=0.008: 0/400 disagree, worst weight gap 0.0e+00 -> all ties (within weight rounding)
+  step 03 high noise d=5 p=0.012: 4/3000 disagree, worst weight gap 6.9e-09 -> all ties (within weight rounding)
+  step 03 high noise d=7 p=0.012: 0/1000 disagree, worst weight gap 0.0e+00 -> all ties (within weight rounding)
+  step 03 high noise d=9 p=0.008: 0/400 disagree, worst weight gap 0.0e+00 -> all ties (within weight rounding)
+  step 04 high noise d=5 p=0.012: 4/3000 disagree, worst weight gap 6.9e-09 -> all ties (within weight rounding)
+  step 04 high noise d=7 p=0.012: 0/1000 disagree, worst weight gap 0.0e+00 -> all ties (within weight rounding)
+  step 04 high noise d=9 p=0.008: 0/400 disagree, worst weight gap 0.0e+00 -> all ties (within weight rounding)
+  step 05 high noise d=5 p=0.012: 4/3000 disagree, worst weight gap 6.9e-09 -> all ties (within weight rounding)
+  step 05 high noise d=7 p=0.012: 0/1000 disagree, worst weight gap 0.0e+00 -> all ties (within weight rounding)
+  step 05 high noise d=9 p=0.008: 0/400 disagree, worst weight gap 0.0e+00 -> all ties (within weight rounding)
+  step 06 high noise d=5 p=0.012: 4/3000 disagree, worst weight gap 6.9e-09 -> all ties (within weight rounding)
+  step 06 high noise d=7 p=0.012: 0/1000 disagree, worst weight gap 0.0e+00 -> all ties (within weight rounding)
+  step 06 high noise d=9 p=0.008: 0/400 disagree, worst weight gap 0.0e+00 -> all ties (within weight rounding)
+  step 07 high noise d=5 p=0.012: 3/3000 disagree, worst weight gap 6.3e-09 -> all ties (within weight rounding)
+  step 07 high noise d=7 p=0.012: 0/1000 disagree, worst weight gap 0.0e+00 -> all ties (within weight rounding)
+  step 07 high noise d=9 p=0.008: 0/400 disagree, worst weight gap 0.0e+00 -> all ties (within weight rounding)
+  step 08 high noise d=5 p=0.012: 3/3000 disagree, worst weight gap 6.3e-09 -> all ties (within weight rounding)
+  step 08 high noise d=7 p=0.012: 0/1000 disagree, worst weight gap 0.0e+00 -> all ties (within weight rounding)
+  step 08 high noise d=9 p=0.008: 0/400 disagree, worst weight gap 0.0e+00 -> all ties (within weight rounding)
+  step 09 high noise d=5 p=0.012: 3/3000 disagree, worst weight gap 6.3e-09 -> all ties (within weight rounding)
+  step 09 high noise d=7 p=0.012: 0/1000 disagree, worst weight gap 0.0e+00 -> all ties (within weight rounding)
+  step 09 high noise d=9 p=0.008: 0/400 disagree, worst weight gap 0.0e+00 -> all ties (within weight rounding)
+  step 10 high noise d=5 p=0.012: 2/3000 disagree, worst weight gap 1.5e-05 -> all ties (within weight rounding)
+  step 10 high noise d=7 p=0.012: 1/1000 disagree, worst weight gap 7.4e-11 -> all ties (within weight rounding)
+  step 10 high noise d=9 p=0.008: 0/400 disagree, worst weight gap 0.0e+00 -> all ties (within weight rounding)
+  step 11 high noise d=5 p=0.012: 2/3000 disagree, worst weight gap 1.5e-05 -> all ties (within weight rounding)
+  step 11 high noise d=7 p=0.012: 1/1000 disagree, worst weight gap 7.4e-11 -> all ties (within weight rounding)
+  step 11 high noise d=9 p=0.008: 0/400 disagree, worst weight gap 0.0e+00 -> all ties (within weight rounding)
+  step 12 high noise d=5 p=0.012: 2/3000 disagree, worst weight gap 1.5e-05 -> all ties (within weight rounding)
+  step 12 high noise d=7 p=0.012: 1/1000 disagree, worst weight gap 7.4e-11 -> all ties (within weight rounding)
+  step 12 high noise d=9 p=0.008: 0/400 disagree, worst weight gap 0.0e+00 -> all ties (within weight rounding)
+
+d=3  (200000 shots, 7 rounds)   pymatching 0.241 us/shot
+  step 00 baseline                        0.667 us/shot    2.77x pymatching        - vs previous   agree 100.0000%
+  step 01 one_event_per_node              0.421 us/shot    1.75x pymatching    1.58x vs previous   agree 100.0000%
+  step 02 memory_reuse                    0.259 us/shot    1.08x pymatching    1.63x vs previous   agree 100.0000%
+  step 03 flat_layout                     0.244 us/shot    1.01x pymatching    1.06x vs previous   agree 100.0000%
+  step 04 hot_loop                        0.220 us/shot    0.92x pymatching    1.11x vs previous   agree 100.0000%
+  step 05 no_alloc_dissolve               0.132 us/shot    0.55x pymatching    1.67x vs previous   agree 100.0000%
+  step 06 no_alloc_pair_obs               0.137 us/shot    0.57x pymatching    0.96x vs previous   agree 100.0000%
+  step 07 lazy_reschedule                 0.116 us/shot    0.48x pymatching    1.18x vs previous   agree 100.0000%
+  step 08 small_shot_shortcuts            0.102 us/shot    0.42x pymatching    1.14x vs previous   agree 100.0000%
+  step 09 no_division                     0.088 us/shot    0.36x pymatching    1.16x vs previous   agree 100.0000%
+  step 10 radix_heap                      0.079 us/shot    0.33x pymatching    1.11x vs previous   agree 100.0000%
+  step 11 flat_pair_obs                   0.082 us/shot    0.34x pymatching    0.96x vs previous   agree 100.0000%
+  step 12 threads_api                     0.077 us/shot    0.32x pymatching    1.07x vs previous   agree 100.0000%
+
+d=5  (100000 shots, 7 rounds)   pymatching 1.711 us/shot
+  step 00 baseline                        5.432 us/shot    3.17x pymatching        - vs previous   agree 99.9980%
+  step 01 one_event_per_node              2.607 us/shot    1.52x pymatching    2.08x vs previous   agree 99.9980%
+  step 02 memory_reuse                    1.832 us/shot    1.07x pymatching    1.42x vs previous   agree 99.9980%
+  step 03 flat_layout                     1.782 us/shot    1.04x pymatching    1.03x vs previous   agree 99.9980%
+  step 04 hot_loop                        1.615 us/shot    0.94x pymatching    1.10x vs previous   agree 99.9980%
+  step 05 no_alloc_dissolve               1.195 us/shot    0.70x pymatching    1.35x vs previous   agree 99.9980%
+  step 06 no_alloc_pair_obs               1.143 us/shot    0.67x pymatching    1.05x vs previous   agree 99.9980%
+  step 07 lazy_reschedule                 1.006 us/shot    0.59x pymatching    1.14x vs previous   agree 99.9980%
+  step 08 small_shot_shortcuts            0.973 us/shot    0.57x pymatching    1.03x vs previous   agree 99.9980%
+  step 09 no_division                     0.957 us/shot    0.56x pymatching    1.02x vs previous   agree 99.9980%
+  step 10 radix_heap                      0.851 us/shot    0.50x pymatching    1.12x vs previous   agree 100.0000%
+  step 11 flat_pair_obs                   0.791 us/shot    0.46x pymatching    1.08x vs previous   agree 100.0000%
+  step 12 threads_api                     0.813 us/shot    0.48x pymatching    0.97x vs previous   agree 100.0000%
+
+d=7  (40000 shots, 7 rounds)   pymatching 4.789 us/shot
+  step 00 baseline                       18.868 us/shot    3.94x pymatching        - vs previous   agree 100.0000%
+  step 01 one_event_per_node              7.816 us/shot    1.63x pymatching    2.41x vs previous   agree 100.0000%
+  step 02 memory_reuse                    6.367 us/shot    1.33x pymatching    1.23x vs previous   agree 100.0000%
+  step 03 flat_layout                     5.636 us/shot    1.18x pymatching    1.13x vs previous   agree 100.0000%
+  step 04 hot_loop                        5.377 us/shot    1.12x pymatching    1.05x vs previous   agree 100.0000%
+  step 05 no_alloc_dissolve               3.933 us/shot    0.82x pymatching    1.37x vs previous   agree 100.0000%
+  step 06 no_alloc_pair_obs               3.884 us/shot    0.81x pymatching    1.01x vs previous   agree 100.0000%
+  step 07 lazy_reschedule                 3.201 us/shot    0.67x pymatching    1.21x vs previous   agree 100.0000%
+  step 08 small_shot_shortcuts            2.995 us/shot    0.63x pymatching    1.07x vs previous   agree 100.0000%
+  step 09 no_division                     3.167 us/shot    0.66x pymatching    0.95x vs previous   agree 100.0000%
+  step 10 radix_heap                      2.639 us/shot    0.55x pymatching    1.20x vs previous   agree 100.0000%
+  step 11 flat_pair_obs                   2.453 us/shot    0.51x pymatching    1.08x vs previous   agree 100.0000%
+  step 12 threads_api                     2.622 us/shot    0.55x pymatching    0.94x vs previous   agree 100.0000%
+
+d=9  (20000 shots, 7 rounds)   pymatching 11.068 us/shot
+  step 00 baseline                       47.811 us/shot    4.32x pymatching        - vs previous   agree 100.0000%
+  step 01 one_event_per_node             18.912 us/shot    1.71x pymatching    2.53x vs previous   agree 100.0000%
+  step 02 memory_reuse                   14.303 us/shot    1.29x pymatching    1.32x vs previous   agree 100.0000%
+  step 03 flat_layout                    13.666 us/shot    1.23x pymatching    1.05x vs previous   agree 100.0000%
+  step 04 hot_loop                       12.825 us/shot    1.16x pymatching    1.07x vs previous   agree 100.0000%
+  step 05 no_alloc_dissolve               9.542 us/shot    0.86x pymatching    1.34x vs previous   agree 100.0000%
+  step 06 no_alloc_pair_obs               9.180 us/shot    0.83x pymatching    1.04x vs previous   agree 100.0000%
+  step 07 lazy_reschedule                 7.553 us/shot    0.68x pymatching    1.22x vs previous   agree 100.0000%
+  step 08 small_shot_shortcuts            7.332 us/shot    0.66x pymatching    1.03x vs previous   agree 100.0000%
+  step 09 no_division                     7.284 us/shot    0.66x pymatching    1.01x vs previous   agree 100.0000%
+  step 10 radix_heap                      5.900 us/shot    0.53x pymatching    1.23x vs previous   agree 100.0000%
+  step 11 flat_pair_obs                   5.894 us/shot    0.53x pymatching    1.00x vs previous   agree 100.0000%
+  step 12 threads_api                     5.983 us/shot    0.54x pymatching    0.99x vs previous   agree 100.0000%
