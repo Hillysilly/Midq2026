@@ -1,4 +1,0 @@
-css pymatching noise=phenomenological bias=0.5
-  threshold ~0.04684   (d5/d9: 0.04772, d9/d13: 0.04596)
-css union_find_weighted noise=phenomenological bias=0.5
-  threshold ~0.04151   (d5/d9: 0.04307, d9/d13: 0.03994)

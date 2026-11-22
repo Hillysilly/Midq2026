@@ -1,6 +1,0 @@
-css greedy_matching noise=circuit bias=0.5
-  threshold ~0.003584   (d3/d5: no crossing, d5/d7: 0.003584)
-css greedy_matching_2opt noise=circuit bias=0.5
-  threshold ~0.004056   (d3/d5: 0.004056, d5/d7: no crossing)
-css pymatching noise=circuit bias=0.5
-  threshold not bracketed by the p range   (d3/d5: no crossing, d5/d7: no crossing)

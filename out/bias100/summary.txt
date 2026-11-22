@@ -1,4 +1,0 @@
-css pymatching noise=circuit bias=100.0
-  threshold ~0.01237   (d3/d5: 0.01462, d5/d7: 0.01012)
-xzzx pymatching noise=circuit bias=100.0
-  threshold ~0.02616   (d3/d5: 0.02672, d5/d7: 0.0256)
